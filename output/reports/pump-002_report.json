@@ -1,0 +1,38 @@
+{
+  "device_id": "pump-002",
+  "equipment_type": "PUMP",
+  "analysis_timestamp": "2026-05-26T14:04:48.553285",
+  "workflow_status": "completed",
+  "health": {
+    "device_id": "pump-002",
+    "health_state": "alert",
+    "degradation_score": 0.269,
+    "trend": "stable",
+    "anomalies": [
+      "pressure_low: 121.2 PSI (normal: 140-160)",
+      "temperature_high: 141.54 F (normal: 70-110)",
+      "vibration_high: 3.62 mm/s (normal: 0-1.5)"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.551996",
+    "status": "completed"
+  },
+  "diagnosis": {
+    "device_id": "pump-002",
+    "primary_diagnosis": "Bearing degradation",
+    "confidence": 0.85,
+    "severity": "high",
+    "sensor_correlations": [
+      "Temperature high: 141.54\u00b0F (normal: 70-110\u00b0F)",
+      "Vibration high: 3.62 mm/s (normal: 0-1.5 mm/s)",
+      "Pressure low: 121.2 PSI"
+    ],
+    "recommended_actions": [
+      "Schedule bearing replacement within 1-2 weeks",
+      "Monitor vibration levels daily",
+      "Reduce operating load if possible"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.552855",
+    "status": "completed"
+  },
+  "overall_recommendation": "URGENT: Schedule maintenance within 1-2 weeks"
+}

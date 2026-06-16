@@ -1,0 +1,38 @@
+{
+  "device_id": "motor-002",
+  "equipment_type": "MOTOR",
+  "analysis_timestamp": "2026-05-26T14:04:48.508865",
+  "workflow_status": "completed",
+  "health": {
+    "device_id": "motor-002",
+    "health_state": "alert",
+    "degradation_score": 0.28,
+    "trend": "stable",
+    "anomalies": [
+      "current_high: 100 Amps (normal: 60-80)",
+      "temperature_high: 140.1 F (normal: 60-120)",
+      "power_factor_low: 0.8579 PF (normal: 0.9-1.0)",
+      "vibration_high: 4.56 mm/s (normal: 0-2)"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.507444",
+    "status": "completed"
+  },
+  "diagnosis": {
+    "device_id": "motor-002",
+    "primary_diagnosis": "Motor bearing degradation",
+    "confidence": 0.9,
+    "severity": "high",
+    "sensor_correlations": [
+      "Current consumption elevated",
+      "Temperature elevated",
+      "Vibration elevated"
+    ],
+    "recommended_actions": [
+      "Replace bearings immediately",
+      "Schedule motor replacement"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.508359",
+    "status": "completed"
+  },
+  "overall_recommendation": "URGENT: Schedule maintenance within 1-2 weeks"
+}

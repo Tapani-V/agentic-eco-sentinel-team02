@@ -1,0 +1,31 @@
+{
+  "name": "schedule_maintenance",
+  "description": "Schedule maintenance for a device",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "device_id": {
+        "type": "string",
+        "description": "ID of the device to schedule maintenance for"
+      },
+      "maintenance_type": {
+        "type": "string",
+        "description": "Type of maintenance (e.g., preventive, corrective, inspection)"
+      },
+      "scheduled_date": {
+        "type": "string",
+        "description": "Scheduled date (YYYY-MM-DD format)"
+      }
+    },
+    "required": ["device_id", "maintenance_type", "scheduled_date"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "maintenance_id": {"type": "string"},
+      "device_id": {"type": "string"},
+      "status": {"type": "string"},
+      "scheduled_date": {"type": "string"}
+    }
+  }
+}

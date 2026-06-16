@@ -1,0 +1,17 @@
+{
+  "device_id": "motor-001",
+  "equipment_type": "MOTOR",
+  "analysis_timestamp": "2026-05-26T14:04:48.498906",
+  "workflow_status": "completed",
+  "health": {
+    "device_id": "motor-001",
+    "health_state": "healthy",
+    "degradation_score": 0.029,
+    "trend": "stable",
+    "anomalies": [],
+    "analysis_timestamp": "2026-05-26T14:04:48.498030",
+    "status": "completed"
+  },
+  "diagnosis": null,
+  "overall_recommendation": "NORMAL: Continue monitoring"
+}

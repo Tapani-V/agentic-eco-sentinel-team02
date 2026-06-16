@@ -1,0 +1,19 @@
+{
+  "device_id": "compressor-001",
+  "equipment_type": "COMPRESSOR",
+  "analysis_timestamp": "2026-05-26T14:04:48.418283",
+  "workflow_status": "completed",
+  "health": {
+    "device_id": "compressor-001",
+    "health_state": "healthy",
+    "degradation_score": 0.026,
+    "trend": "stable",
+    "anomalies": [
+      "discharge_pressure_low: 89.24 PSI (normal: 90-110)"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.417303",
+    "status": "completed"
+  },
+  "diagnosis": null,
+  "overall_recommendation": "NORMAL: Continue monitoring"
+}

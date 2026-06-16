@@ -1,0 +1,101 @@
+{
+  "spare_parts": [
+    {
+      "part_id": "MB-001",
+      "part_name": "Motor Bearing Assembly",
+      "part_type": "bearing",
+      "category": "mechanical",
+      "stock_quantity": 5,
+      "unit_cost": 450.00,
+      "lead_time_days": 2,
+      "available": true,
+      "equipment_types": ["MOTOR"],
+      "description": "Standard ball bearing assembly for industrial motors"
+    },
+    {
+      "part_id": "PS-002",
+      "part_name": "Pump Seal Kit",
+      "part_type": "seal",
+      "category": "mechanical",
+      "stock_quantity": 12,
+      "unit_cost": 120.00,
+      "lead_time_days": 1,
+      "available": true,
+      "equipment_types": ["PUMP"],
+      "description": "Mechanical seal replacement for centrifugal pumps"
+    },
+    {
+      "part_id": "CV-003",
+      "part_name": "Discharge Valve Assembly",
+      "part_type": "valve",
+      "category": "mechanical",
+      "stock_quantity": 8,
+      "unit_cost": 680.00,
+      "lead_time_days": 3,
+      "available": true,
+      "equipment_types": ["COMPRESSOR"],
+      "description": "High-pressure discharge valve for rotary compressors"
+    },
+    {
+      "part_id": "CC-004",
+      "part_name": "Custom Component Assembly",
+      "part_type": "component",
+      "category": "mechanical",
+      "stock_quantity": 0,
+      "unit_cost": 850.00,
+      "lead_time_days": 14,
+      "available": false,
+      "equipment_types": ["MOTOR", "PUMP", "COMPRESSOR"],
+      "description": "OEM-specific custom component",
+      "backorder_note": "On order from OEM supplier, expected 2026-06-10"
+    },
+    {
+      "part_id": "SC-005",
+      "part_name": "Motor Stator Coil Assembly",
+      "part_type": "coil",
+      "category": "electrical",
+      "stock_quantity": 3,
+      "unit_cost": 1200.00,
+      "lead_time_days": 5,
+      "available": true,
+      "equipment_types": ["MOTOR", "GENERATOR"],
+      "description": "3-phase stator winding replacement"
+    },
+    {
+      "part_id": "CF-006",
+      "part_name": "Cooling Fan Motor Assembly",
+      "part_type": "fan",
+      "category": "mechanical",
+      "stock_quantity": 7,
+      "unit_cost": 380.00,
+      "lead_time_days": 2,
+      "available": true,
+      "equipment_types": ["COMPRESSOR", "GENERATOR"],
+      "description": "AC motor-driven cooling fan unit"
+    },
+    {
+      "part_id": "AVR-007",
+      "part_name": "Automatic Voltage Regulator (AVR)",
+      "part_type": "regulator",
+      "category": "electrical",
+      "stock_quantity": 4,
+      "unit_cost": 520.00,
+      "lead_time_days": 4,
+      "available": true,
+      "equipment_types": ["GENERATOR"],
+      "description": "Electronic AVR module for alternators"
+    },
+    {
+      "part_id": "PI-008",
+      "part_name": "Pump Impeller Assembly",
+      "part_type": "impeller",
+      "category": "mechanical",
+      "stock_quantity": 6,
+      "unit_cost": 420.00,
+      "lead_time_days": 3,
+      "available": true,
+      "equipment_types": ["PUMP"],
+      "description": "Replacement impeller for centrifugal pump"
+    }
+  ]
+}

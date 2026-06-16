@@ -1,0 +1,37 @@
+{
+  "device_id": "generator-001",
+  "equipment_type": "GENERATOR",
+  "analysis_timestamp": "2026-05-26T14:04:48.455343",
+  "workflow_status": "completed",
+  "health": {
+    "device_id": "generator-001",
+    "health_state": "alert",
+    "degradation_score": 0.346,
+    "trend": "stable",
+    "anomalies": [
+      "voltage_low: 371.04 V (normal: 380-420)",
+      "temperature_high: 178.37 F (normal: 90-130)",
+      "power_factor_low: 0.7904 PF (normal: 0.9-1.0)"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.454078",
+    "status": "completed"
+  },
+  "diagnosis": {
+    "device_id": "generator-001",
+    "primary_diagnosis": "Generator output voltage degradation",
+    "confidence": 0.8,
+    "severity": "medium",
+    "sensor_correlations": [
+      "Voltage low",
+      "Possible AVR issue"
+    ],
+    "recommended_actions": [
+      "Check AVR (Automatic Voltage Regulator)",
+      "Verify load",
+      "Service generator"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.454908",
+    "status": "completed"
+  },
+  "overall_recommendation": "URGENT: Schedule maintenance within 1-2 weeks"
+}

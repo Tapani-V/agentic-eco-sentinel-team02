@@ -1,0 +1,38 @@
+{
+  "device_id": "compressor-003",
+  "equipment_type": "COMPRESSOR",
+  "analysis_timestamp": "2026-05-26T14:04:48.439324",
+  "workflow_status": "completed",
+  "health": {
+    "device_id": "compressor-003",
+    "health_state": "alert",
+    "degradation_score": 0.35,
+    "trend": "stable",
+    "anomalies": [
+      "discharge_pressure_low: 31.83 PSI (normal: 90-110)",
+      "discharge_temp_high: 236.0 F (normal: 130-170)",
+      "motor_current_high: 148.61 Amps (normal: 80-120)",
+      "cooling_water_temp_high: 95.25 F (normal: 70-90)"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.437757",
+    "status": "completed"
+  },
+  "diagnosis": {
+    "device_id": "compressor-003",
+    "primary_diagnosis": "Compressor thermal stress - possible valve or mechanical issue",
+    "confidence": 0.85,
+    "severity": "high",
+    "sensor_correlations": [
+      "Discharge temperature high",
+      "Motor current elevated"
+    ],
+    "recommended_actions": [
+      "Check compressor valve operation",
+      "Inspect for debris",
+      "Consider rebuild"
+    ],
+    "analysis_timestamp": "2026-05-26T14:04:48.438805",
+    "status": "completed"
+  },
+  "overall_recommendation": "URGENT: Schedule maintenance within 1-2 weeks"
+}

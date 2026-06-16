@@ -1,0 +1,37 @@
+{
+  "name": "get_spare_parts",
+  "description": "Get available spare parts matching specified criteria",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "part_type": {
+        "type": "string",
+        "description": "Type of spare part to search for (e.g., bearing, seal, filter)"
+      },
+      "category": {
+        "type": "string",
+        "description": "Optional category filter (e.g., mechanical, electrical, hydraulic)"
+      }
+    },
+    "required": ["part_type"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "parts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "part_id": {"type": "string"},
+            "part_name": {"type": "string"},
+            "category": {"type": "string"},
+            "stock_quantity": {"type": "integer"},
+            "unit_cost": {"type": "number"}
+          }
+        }
+      },
+      "count": {"type": "integer"}
+    }
+  }
+}

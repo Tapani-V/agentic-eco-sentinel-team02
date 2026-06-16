@@ -1,0 +1,17 @@
+{
+  "device_id": "pump-001",
+  "equipment_type": "PUMP",
+  "analysis_timestamp": "2026-05-26T14:04:48.545675",
+  "workflow_status": "completed",
+  "health": {
+    "device_id": "pump-001",
+    "health_state": "healthy",
+    "degradation_score": 0.023,
+    "trend": "stable",
+    "anomalies": [],
+    "analysis_timestamp": "2026-05-26T14:04:48.544403",
+    "status": "completed"
+  },
+  "diagnosis": null,
+  "overall_recommendation": "NORMAL: Continue monitoring"
+}

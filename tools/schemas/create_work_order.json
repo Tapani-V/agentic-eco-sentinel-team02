@@ -1,0 +1,30 @@
+{
+  "name": "create_work_order",
+  "description": "Create a new work order",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "work_order_type": {
+        "type": "string",
+        "description": "Type of work order (e.g., repair, installation, inspection)"
+      },
+      "priority": {
+        "type": "string",
+        "description": "Priority level (critical, high, medium, low)"
+      },
+      "description": {
+        "type": "string",
+        "description": "Detailed description of the work to be done"
+      }
+    },
+    "required": ["work_order_type", "priority", "description"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "work_order_id": {"type": "string"},
+      "status": {"type": "string"},
+      "created_at": {"type": "string"}
+    }
+  }
+}

@@ -1,0 +1,102 @@
+version: '3.9'
+
+services:
+  # HealthAgent Service - Port 8001
+  health-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.health_agent
+    container_name: health-agent
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    env_file:
+      - .agentcore.env
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # DiagnosisAgent Service - Port 8002
+  diagnosis-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.diagnosis_agent
+    container_name: diagnosis-agent
+    ports:
+      - "8002:8002"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    env_file:
+      - .agentcore.env
+    networks:
+      - agent-network
+    depends_on:
+      health-agent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Orchestrator Service - Port 8000
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - HEALTH_AGENT_URL=http://health-agent:8001
+      - DIAGNOSIS_AGENT_URL=http://diagnosis-agent:8002
+    env_file:
+      - .agentcore.env
+    networks:
+      - agent-network
+    depends_on:
+      health-agent:
+        condition: service_healthy
+      diagnosis-agent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  agent-network:
+    driver: bridge
+    name: agent-network
+
+volumes:
+  agent-logs:
+    driver: local
