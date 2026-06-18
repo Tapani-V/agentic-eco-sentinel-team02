@@ -39,6 +39,7 @@ class DiagnosisAgentResponse(BaseModel):
     device_id: str
     diagnosis: str
     confidence: float = Field(ge=0.0, le=1.0)
+    confidence_rule_based: Optional[float] = Field(ge=0.0, le=1.0, default=None)
     severity: str = Field(description="low | medium | high")
     action: str = Field(
         description="URGENT_REPAIR | SCHEDULE_MAINTENANCE | CHECK_PARTS_FIRST | MONITOR_ONLY"
@@ -113,6 +114,7 @@ async def diagnose_device(request: DiagnosisAgentRequest) -> DiagnosisAgentRespo
             device_id=result['device_id'],
             diagnosis=result['diagnosis'],
             confidence=result['confidence'],
+            confidence_rule_based=result.get('confidence_rule_based'),
             severity=result['severity'],
             action=result['action'],
             action_taken=result['action_taken'],

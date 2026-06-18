@@ -41,6 +41,7 @@ class WorkflowState(TypedDict):
     # From DiagnosisAgent (Step 3, optional)
     diagnosis: str
     confidence: float
+    confidence_rule_based: Optional[float]
     severity: str
     action: str
     action_taken: str
@@ -184,6 +185,7 @@ class OrchestrationWorkflow:
             state['route'] = 'end'
             state['diagnosis'] = 'Device operating normally'
             state['confidence'] = 1.0
+            state['confidence_rule_based'] = 1.0
             state['severity'] = 'low'
             state['action'] = 'MONITOR_ONLY'
             state['action_taken'] = 'No action required'
@@ -228,6 +230,7 @@ class OrchestrationWorkflow:
                 
                 state['diagnosis'] = result['diagnosis']
                 state['confidence'] = result['confidence']
+                state['confidence_rule_based'] = result.get('confidence_rule_based')
                 state['severity'] = result['severity']
                 state['action'] = result['action']
                 state['action_taken'] = result['action_taken']

@@ -154,6 +154,7 @@ This is the most important endpoint. It loads real data and runs through the com
   "health_status": "critical",
   "diagnosis": "Pump valve wear - pressure unstable with high vibration",
   "confidence": 0.88,
+  "confidence_rule_based": 0.88,
   "action": "SCHEDULE_MAINTENANCE",
   "action_taken": "Preventive maintenance scheduled for pump-002",
   "tool_results": {
@@ -190,6 +191,7 @@ Example response if LLM were called:
   "health_status": "warning",
   "diagnosis": "Bearing misalignment detected based on vibration analysis",
   "confidence": 0.72,
+  "confidence_rule_based": 0.72,
   "action": "CHECK_PARTS_FIRST",
   "llm_used": true,
   "path": "full_diagnosis",

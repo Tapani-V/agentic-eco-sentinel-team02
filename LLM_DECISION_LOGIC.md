@@ -105,6 +105,7 @@ Response:
   "health_status": "critical",
   "diagnosis": "Pump valve wear - pressure unstable with high vibration",
   "confidence": 0.88,
+  "confidence_rule_based": 0.88,  ← Rule-based confidence (unchanged by LLM)
   "llm_used": false,  ← LLM NOT used
   "action": "SCHEDULE_MAINTENANCE",
   "tool_results": {
@@ -140,7 +141,8 @@ Response:
 {
   "health_status": "warning",
   "diagnosis": "Bearing misalignment detected (LLM analysis)",
-  "confidence": 0.78,  ← LLM refined
+  "confidence": 0.78,  ← Final confidence (LLM refined from 0.72)
+  "confidence_rule_based": 0.72,  ← Original rule-based confidence
   "llm_used": true,    ← LLM WAS used
   "action": "CHECK_PARTS_FIRST",
   "path": "full_diagnosis"

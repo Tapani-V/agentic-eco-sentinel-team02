@@ -181,6 +181,36 @@ Documentation:
   ✓ Quick reference card
 
 ================================================================================
+RECENT UPDATES - June 18, 2026
+================================================================================
+
+✅ CONFIDENCE TRACKING IMPLEMENTATION
+
+Added confidence audit trail to diagnosi response:
+  - confidence_rule_based: Initial confidence from pattern matching
+  - confidence: Final confidence (may be updated by LLM)
+  
+Example:
+  - Rule confidence: 0.80 (from pattern matching)
+  - LLM analysis called (confidence < 0.85)
+  - Final confidence: 0.92 (updated by LLM)
+  - Response shows both values for transparency
+
+Updated files:
+  ✓ src/agents/diagnosis_agent.py: Added rule_confidence tracking
+  ✓ LLM_DECISION_LOGIC.md: Added confidence_rule_based to response examples
+  ✓ SWAGGER_UI_TESTING_GUIDE.md: Updated test case responses
+  ✓ WEEK2_DAY5_7_COMPLETE.md: Updated response examples
+  ✓ IMPLEMENTATION_WEEK2_DAY5_7_DOCKER_E2E.md: Updated response examples
+  ✓ DEVICE_ENDPOINT_GUIDE.md: Added field documentation
+
+Benefits:
+  - Shows audit trail of confidence changes
+  - Transparent about LLM vs rule-based decisions
+  - Helps with debugging and analysis
+  - Professional response format
+
+================================================================================
 VERIFICATION CHECKLIST
 ================================================================================
 

@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   # HealthAgent Service - Port 8001
   health-agent:

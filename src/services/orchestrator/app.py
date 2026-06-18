@@ -48,6 +48,7 @@ class OrchestratorResponse(BaseModel):
     health_status: str
     diagnosis: str = None
     confidence: float = None
+    confidence_rule_based: Optional[float] = None
     action: str = None
     action_taken: str = None
     tool_results: Dict[str, Any] = Field(default_factory=dict)
@@ -226,6 +227,7 @@ async def process_device_from_file(device_id: str) -> OrchestratorResponse:
             'anomalies': [],
             'diagnosis': None,
             'confidence': None,
+            'confidence_rule_based': None,
             'severity': None,
             'action': None,
             'action_taken': None,
@@ -255,6 +257,7 @@ async def process_device_from_file(device_id: str) -> OrchestratorResponse:
             health_status=result['health_status'],
             diagnosis=result['diagnosis'],
             confidence=result['confidence'],
+            confidence_rule_based=result.get('confidence_rule_based'),
             action=result['action'],
             action_taken=result['action_taken'],
             tool_results=result.get('tool_results', {}),
@@ -337,6 +340,7 @@ async def process_device(request: OrchestratorRequest) -> OrchestratorResponse:
             'anomalies': [],
             'diagnosis': None,
             'confidence': None,
+            'confidence_rule_based': None,
             'severity': None,
             'action': None,
             'action_taken': None,
@@ -366,6 +370,7 @@ async def process_device(request: OrchestratorRequest) -> OrchestratorResponse:
             health_status=result['health_status'],
             diagnosis=result['diagnosis'],
             confidence=result['confidence'],
+            confidence_rule_based=result.get('confidence_rule_based'),
             action=result['action'],
             action_taken=result['action_taken'],
             tool_results=result.get('tool_results', {}),

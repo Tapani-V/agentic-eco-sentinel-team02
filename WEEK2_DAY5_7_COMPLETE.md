@@ -144,6 +144,7 @@ python tests/test_e2e_all_stories.py
   "health_status": "warning",
   "diagnosis": "Compressor valve wear detected",
   "confidence": 0.88,
+  "confidence_rule_based": 0.88,
   "action_taken": "maintenance_scheduled",
   "maintenance_id": "MAINT-89456",
   "scheduled_date": "2026-06-20"
@@ -158,6 +159,7 @@ python tests/test_e2e_all_stories.py
   "health_status": "critical",
   "diagnosis": "Pump cavitation with bearing failure",
   "confidence": 0.96,
+  "confidence_rule_based": 0.96,
   "action_taken": "work_order_created",
   "work_order_id": "WO-12345",
   "priority": "critical"

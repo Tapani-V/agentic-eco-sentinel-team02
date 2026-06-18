@@ -93,8 +93,9 @@ Example: `curl http://localhost:8000/devices/motor-005`
 
 Response includes:
 - `health_status`: Current health classification
-- `confidence`: Pattern matching confidence (0.0-1.0)
-- `llm_used`: Whether Azure OpenAI was called
+- `confidence`: Final confidence score (0.0-1.0) - may be rule-based or LLM-verified
+- `confidence_rule_based`: Initial confidence from pattern matching rules (0.0-1.0) - shows confidence before LLM analysis
+- `llm_used`: Whether Azure OpenAI was called for verification
 - `diagnosis`: Root cause analysis
 - `action`: Recommended action
 - `tool_results`: AWS MCP tool execution results

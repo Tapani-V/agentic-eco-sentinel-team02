@@ -9,9 +9,11 @@ THIS AGENT CALLS MCP TOOLS VIA GATEWAYCLIENT
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
+import json
 
 from src.agents.base_agent import BaseAgent
 from src.gateway.client import GatewayClient
+from src.llm.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,7 @@ class DiagnosisAgent(BaseAgent):
             → If confidence < 0.85: UNCERTAIN (call LLM for judgment)
     
     Step 3: LLM Enhancement (if confidence < 0.85)
-            → Call Azure OpenAI with sensor data + rule suggestion
+            → Call LLM with sensor data + rule suggestion
             → Get AI judgment + final confidence + recommended action
     
     Step 4: Execute Action
@@ -49,9 +51,9 @@ class DiagnosisAgent(BaseAgent):
         """Initialize DiagnosisAgent"""
         super().__init__("DiagnosisAgent", "diagnosis_analysis")
         
-        # Will be set by FastAPI wrapper when needed
-        self.gateway_client = None
-        self.llm_client = None
+        # Initialize clients
+        self.gateway_client = None  # Will be set by FastAPI wrapper when needed
+        self.llm_client = LLMClient()  # Initialize LLM client for diagnosis verification
     
     async def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -104,6 +106,7 @@ class DiagnosisAgent(BaseAgent):
             rule_match = self._match_patterns(equipment_type, anomalies, current_reading)
             diagnosis = rule_match['diagnosis']
             confidence = rule_match['confidence']
+            rule_confidence = confidence  # Track initial rule confidence
             recommended_action = rule_match['action']
             severity = rule_match['severity']
             
@@ -124,12 +127,29 @@ class DiagnosisAgent(BaseAgent):
             logger.info(f"[DiagnosisAgent] STEP 3: Confidence check (threshold: 0.85)")
             llm_used = False
             if confidence < 0.85 and health_status != 'critical':
-                logger.info(f"  Confidence {confidence:.2f} < 0.85 → CALLING LLM for judgment (stub - not yet implemented)")
-                llm_used = True  # Flag that LLM would be used (implementation pending)
-                # TODO: When LLM is implemented, call LLM here and get recommended_action from LLM response
-                # For now, action remains from rule matching
+                logger.info(f"  Confidence {confidence:.2f} < 0.85 → CALLING LLM for verification")
+                llm_used = True
+                
+                # Call LLM to verify diagnosis and get recommendation
+                llm_response = self.llm_client.verify_diagnosis(
+                    device_id=device_id,
+                    equipment_type=equipment_type,
+                    anomalies=anomalies,
+                    rule_diagnosis=diagnosis,
+                    rule_action=recommended_action,
+                    rule_confidence=confidence,
+                    current_reading=current_reading
+                )
+                
+                # Update diagnosis and action based on LLM response
+                diagnosis = llm_response['diagnosis']
+                recommended_action = llm_response['action']
+                confidence = llm_response['confidence']
+                llm_used = llm_response['llm_used']
+                
+                logger.info(f"  LLM Recommendation: {diagnosis} ({recommended_action}, confidence: {confidence:.2f})")
             else:
-                logger.info(f"  Confidence {confidence:.2f} >= 0.85 → TRUST RULE/ESCALATION")
+                logger.info(f"  Confidence {confidence:.2f} >= 0.85 → TRUST RULE (no LLM needed)")
             
             # STEP 4: Execute action
             logger.info(f"[DiagnosisAgent] STEP 4: Execute action ({recommended_action})")
@@ -156,11 +176,12 @@ class DiagnosisAgent(BaseAgent):
                 'device_id': device_id,
                 'diagnosis': diagnosis,
                 'confidence': round(confidence, 2),
+                'confidence_rule_based': round(rule_confidence, 2),  # Initial confidence from pattern matching
+                'llm_used': llm_used,
                 'severity': severity,
                 'action': recommended_action,
                 'action_taken': action_result.get('description', ''),
                 'tool_results': action_result.get('tools', {}),
-                'llm_used': llm_used,
                 'analysis_timestamp': datetime.utcnow().isoformat(),
                 'status': 'completed',
                 # New recommendation fields for dashboard
@@ -505,11 +526,21 @@ class DiagnosisAgent(BaseAgent):
                 
                 logger.info(f"[_execute_action] Spare parts check result: {parts_result}")
                 
-                # Step 3: Decide next action based on parts availability
+                # Step 3: Parse response body if it's a JSON string
+                parts_data = parts_result
+                if isinstance(parts_result.get("body"), str):
+                    try:
+                        parts_data = json.loads(parts_result.get("body"))
+                        logger.info(f"[_execute_action] Parsed body: {parts_data}")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"[_execute_action] Failed to parse body as JSON: {e}")
+                        parts_data = {}
+                
+                # Step 4: Decide next action based on parts availability
                 from datetime import datetime, timedelta
                 scheduled_date = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")
                 
-                if parts_result.get("parts") and len(parts_result.get("parts", [])) > 0:
+                if parts_data.get("parts") and len(parts_data.get("parts", [])) > 0:
                     # Parts available - proceed with maintenance scheduling
                     logger.info(f"[_execute_action] Parts available, proceeding with maintenance scheduling")
                     

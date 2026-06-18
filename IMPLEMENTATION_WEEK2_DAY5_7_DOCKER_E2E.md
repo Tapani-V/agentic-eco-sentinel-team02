@@ -245,6 +245,7 @@ MCP Tools Called: create-work-order, schedule-maintenance, get-spare-parts (cond
   "health_score": 0.92,
   "diagnosis": "Pump cavitation with bearing failure",
   "confidence": 0.96,
+  "confidence_rule_based": 0.96,
   "action_taken": "work_order_created",
   "work_order_id": "WO-12345",
   "priority": "critical",
