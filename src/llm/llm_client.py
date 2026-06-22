@@ -29,10 +29,10 @@ class LLMClient:
     
     def __init__(self):
         """Initialize LLM client from environment variables"""
-        self.api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        self.api_key = os.getenv("AZURE_OPENAI_KEY")
         self.endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-        self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+        self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
         
         if not self.api_key or not self.endpoint:
             logger.warning("LLM credentials not configured. LLM verification disabled.")
