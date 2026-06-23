@@ -378,8 +378,16 @@
             transition: all 0.2s ease;
         }
 
-        .alert-item.critical { border-left-color: var(--critical-red); background: rgba(239, 68, 68, 0.05); }
-        .alert-item.high { border-left-color: var(--warning-amber); background: rgba(245, 158, 11, 0.05); }
+        .alert-item.critical { 
+            border-left-color: #c62828; 
+            background: #fce4e4;
+            color: #5d2626;
+        }
+        .alert-item.high { 
+            border-left-color: #f57c00; 
+            background: #fff3e0;
+            color: #6d4c41;
+        }
 
         .alert-header {
             display: flex;
@@ -390,7 +398,7 @@
 
         .alert-title {
             font-weight: 700;
-            color: var(--text-primary);
+            color: inherit;
         }
 
         .alert-badge {
@@ -399,26 +407,30 @@
             font-size: 0.75em;
             font-weight: 700;
             text-transform: uppercase;
+            flex-shrink: 0;
+            margin-left: 8px;
         }
 
         .alert-badge.critical {
-            background: var(--critical-red);
+            background: #c62828;
             color: white;
         }
 
         .alert-badge.high {
-            background: var(--warning-amber);
+            background: #f57c00;
             color: white;
         }
 
         .alert-description {
-            color: var(--text-secondary);
+            color: inherit;
             font-size: 0.9em;
             margin-bottom: 8px;
+            font-weight: 500;
         }
 
         .alert-timestamp {
-            color: var(--text-muted);
+            color: inherit;
+            opacity: 0.85;
             font-size: 0.85em;
         }
 
@@ -578,9 +590,31 @@
 
         <!-- Maintenance Tab -->
         <div id="maintenance" class="tab-content">
-            <div style="background: white; border-radius: 12px; padding: 32px; text-align: center; color: var(--text-secondary);">
-                <div class="loading"></div> 
-                <p style="margin-top: 12px;">Loading maintenance schedule...</p>
+            <div style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 2px solid #ddd; padding-bottom: 0;">
+                <button onclick="switchMaintenanceTab(event, 'schedules')" class="maintenance-tab-btn active" style="padding: 12px 16px; background: none; border: none; cursor: pointer; color: #1a3a70; font-weight: 600; border-bottom: 3px solid #1a3a70; margin-bottom: -2px;">📅 Schedules</button>
+                <button onclick="switchMaintenanceTab(event, 'work-orders')" class="maintenance-tab-btn" style="padding: 12px 16px; background: none; border: none; cursor: pointer; color: #666; font-weight: 600; border-bottom: 3px solid transparent;">📋 Work Orders</button>
+                <button onclick="switchMaintenanceTab(event, 'spare-parts')" class="maintenance-tab-btn" style="padding: 12px 16px; background: none; border: none; cursor: pointer; color: #666; font-weight: 600; border-bottom: 3px solid transparent;">🔧 Spare Parts</button>
+            </div>
+            
+            <div id="maintenance-schedules" class="maintenance-section" style="display: block;">
+                <div style="background: white; border-radius: 12px; padding: 24px; text-align: center; color: var(--text-secondary);">
+                    <div class="loading"></div> 
+                    <p style="margin-top: 12px;">Loading maintenance schedules...</p>
+                </div>
+            </div>
+            
+            <div id="maintenance-work-orders" class="maintenance-section" style="display: none;">
+                <div style="background: white; border-radius: 12px; padding: 24px; text-align: center; color: var(--text-secondary);">
+                    <div class="loading"></div> 
+                    <p style="margin-top: 12px;">Loading work orders...</p>
+                </div>
+            </div>
+            
+            <div id="maintenance-spare-parts" class="maintenance-section" style="display: none;">
+                <div style="background: white; border-radius: 12px; padding: 24px; text-align: center; color: var(--text-secondary);">
+                    <div class="loading"></div> 
+                    <p style="margin-top: 12px;">Loading spare parts...</p>
+                </div>
             </div>
         </div>
 
@@ -629,11 +663,23 @@
             loadTabData(tabName);
         }
 
-        // ========== DATA FETCHING ==========
-        async function fetchAPI(endpoint) {
+        // ========== DATA FETCHING WITH RETRY ==========
+        let retryCount = 0;
+        const MAX_RETRIES = 10;
+        
+        async function fetchAPI(endpoint, retryAttempt = 0) {
             try {
                 const response = await fetch(`${API_BASE}${endpoint}`);
-                if (!response.ok) throw new Error(`API error: ${response.status}`);
+                if (!response.ok) {
+                    // If 503 (Service Unavailable), retry with exponential backoff
+                    if (response.status === 503 && retryAttempt < MAX_RETRIES) {
+                        const delay = 500 * (retryAttempt + 1); // 500ms, 1s, 1.5s, 2s, etc.
+                        console.warn(`API ${endpoint} unavailable (attempt ${retryAttempt + 1}/${MAX_RETRIES}), retrying in ${delay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return fetchAPI(endpoint, retryAttempt + 1);
+                    }
+                    throw new Error(`API error: ${response.status}`);
+                }
                 return await response.json();
             } catch (error) {
                 console.error(`Error fetching ${endpoint}:`, error);
@@ -641,36 +687,22 @@
             }
         }
         // ========== LOAD DEVICES NEEDING ATTENTION ==========
-        async function loadDevicesAttention(fleetData) {
+        function loadDevicesAttention(fleetData) {
             const container = document.getElementById('devicesAttentionContainer');
-            const devicesData = await fetchAPI('/devices');
             
-            if (!devicesData || !devicesData.devices) {
-                container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">No device data available</div>';
-                return;
-            }
+            // Use problematic devices from fleet summary (already fetched)
+            const problematicDevices = fleetData._problematic_devices || [];
             
-            const devices = devicesData.devices;
-            // Sort by criticality: critical first, then warning
-            const sorted = devices
-                .filter(d => d.health_status !== 'healthy')
-                .sort((a, b) => {
-                    const priority = { critical: 0, warning: 1, healthy: 2 };
-                    return (priority[a.health_status] || 2) - (priority[b.health_status] || 2);
-                })
-                .slice(0, 10); // Show top 10 problematic devices
-            
-            if (sorted.length === 0) {
+            if (!problematicDevices || problematicDevices.length === 0) {
                 container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--accent-cyan); font-weight: 600;">✅ All devices operating normally</div>';
                 return;
             }
             
             let html = '<div style="display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto;">';
-            sorted.forEach(device => {
+            problematicDevices.forEach(device => {
                 const statusColor = device.health_status === 'critical' ? '#455a64' : '#ffc107';
                 const statusLabel = device.health_status === 'critical' ? '🔴 CRITICAL' : '🟡 WARNING';
                 const health = ((1 - device.degradation_score) * 100).toFixed(0);
-                const degradation = (device.degradation_score * 100).toFixed(0);
                 
                 html += `
                     <div style="
@@ -703,7 +735,14 @@
         // ========== LOAD OVERVIEW DATA ==========
         async function loadOverviewData() {
             const summaryData = await fetchAPI('/fleet-summary');
-            if (!summaryData) return;
+            if (!summaryData) {
+                // Show loading state while data is being fetched
+                document.getElementById('fleetHealth').textContent = '⏳ Loading...';
+                document.getElementById('warningCount').textContent = '⏳';
+                document.getElementById('criticalCount').textContent = '⏳';
+                document.getElementById('totalDevices').textContent = '⏳';
+                return;
+            }
 
             // Cache the fleet summary data for analytics to use
             window.lastFleetSummary = {
@@ -856,30 +895,86 @@
 
         // ========== LOAD MAINTENANCE DATA ==========
         async function loadMaintenanceData() {
-            const maintenanceData = await fetchAPI('/maintenance/schedule');
+            // Load real MCP tool data from maintenance-schedule endpoint
+            const maintenanceData = await fetchAPI('/maintenance-schedule');
             if (!maintenanceData) return;
 
-            const container = document.getElementById('maintenance').querySelector('div');
-            const items = maintenanceData.items || [];
+            const container = document.getElementById('maintenance-schedules');
+            const schedules = maintenanceData.schedules || [];
+            const byPriority = maintenanceData.by_priority || {};
 
             let html = '<div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm);">';
-            html += '<h2 style="color: var(--primary-blue); margin-bottom: 16px;">Maintenance Schedule</h2>';
-            html += `<div style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">`;
-            html += `<div class="kpi-card"><div class="kpi-label">Work Orders</div><div class="kpi-value" style="color: var(--critical-red);">${maintenanceData.work_orders || 0}</div></div>`;
-            html += `<div class="kpi-card"><div class="kpi-label">Scheduled</div><div class="kpi-value" style="color: var(--warning-amber);">${maintenanceData.scheduled_maintenance || 0}</div></div>`;
+            html += '<h2 style="color: var(--primary-blue); margin-bottom: 16px;">⏱️ Maintenance Schedule</h2>';
+            
+            // KPI Cards with real counts
+            html += `<div style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">`;
+            html += `<div class="kpi-card"><div class="kpi-label">Urgent</div><div class="kpi-value" style="color: #c62828; font-weight: 800;">${byPriority.urgent || 0}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Scheduled</div><div class="kpi-value" style="color: #ffc107; font-weight: 800;">${byPriority.scheduled || 0}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Total Cost</div><div class="kpi-value" style="color: #1565c0; font-weight: 800;">$${(maintenanceData.total_estimated_cost || 0).toFixed(0)}</div></div>`;
             html += '</div>';
 
-            if (items.length === 0) {
-                html += '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No maintenance items scheduled</div>';
+            if (schedules.length === 0) {
+                html += '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No maintenance schedules</div>';
             } else {
                 html += '<div style="display: flex; flex-direction: column; gap: 12px;">';
-                html += items.map(item => `
-                    <div class="alert-item ${item.priority === 'urgent' ? 'critical' : 'high'}">
-                        <div style="font-weight: 600; color: var(--text-primary);">${item.device_id}</div>
-                        <div style="font-size: 0.9em; color: var(--text-secondary); margin: 8px 0;">${item.diagnosis || 'Maintenance required'}</div>
+                html += schedules.map(schedule => `
+                    <div class="alert-item ${schedule.priority === 'urgent' ? 'critical' : 'high'}">
+                        <div class="alert-header">
+                            <div style="font-weight: 600; color: var(--text-primary);">${schedule.device_id || 'Unknown Device'}</div>
+                            <div class="alert-badge ${schedule.priority === 'urgent' ? 'critical' : 'high'}">${(schedule.priority || 'scheduled').toUpperCase()}</div>
+                        </div>
+                        <div style="font-size: 0.9em; color: var(--text-secondary); margin: 8px 0;">${schedule.reason || 'Maintenance required'}</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85em; margin-bottom: 8px;">
+                            <span>📅 ${schedule.start_date || 'TBD'}</span>
+                            <span>⏱️ ${schedule.duration_hours || 0}h</span>
+                            <span>💰 $${(schedule.estimated_cost || 0).toFixed(2)}</span>
+                        </div>
+                        ${schedule.parts_needed && schedule.parts_needed.length > 0 ? `<div style="font-size: 0.85em; color: #666;">Parts: ${schedule.parts_needed.join(', ')}</div>` : ''}
+                    </div>
+                `).join('');
+                html += '</div>';
+            }
+            html += '</div>';
+            
+            container.innerHTML = html;
+            updateLastUpdate();
+        }
+        
+        async function loadWorkOrdersData() {
+            // Load real work orders from MCP tool results
+            const workOrdersData = await fetchAPI('/work-orders');
+            if (!workOrdersData) return;
+
+            const container = document.getElementById('maintenance-work-orders');
+            const workOrders = workOrdersData.work_orders || [];
+            const byUrgency = workOrdersData.by_urgency || {};
+
+            let html = '<div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm);">';
+            html += '<h2 style="color: var(--primary-blue); margin-bottom: 16px;">📋 Work Orders</h2>';
+            
+            // KPI Cards with urgency breakdown
+            html += `<div style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">`;
+            html += `<div class="kpi-card"><div class="kpi-label">Total</div><div class="kpi-value" style="color: #1565c0; font-weight: 800;">${workOrdersData.total || 0}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Immediate</div><div class="kpi-value" style="color: #c62828; font-weight: 800;">${byUrgency.immediate || 0}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Urgent</div><div class="kpi-value" style="color: #f57c00; font-weight: 800;">${byUrgency.urgent || 0}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Hours Est.</div><div class="kpi-value" style="color: #ffc107; font-weight: 800;">${workOrdersData.total_estimated_hours || 0}h</div></div>`;
+            html += '</div>';
+
+            if (workOrders.length === 0) {
+                html += '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No work orders</div>';
+            } else {
+                html += '<div style="display: flex; flex-direction: column; gap: 12px;">';
+                html += workOrders.map(wo => `
+                    <div class="alert-item ${wo.urgency === 'immediate' ? 'critical' : 'high'}">
+                        <div class="alert-header">
+                            <div style="font-weight: 600; color: var(--text-primary);">${wo.work_order_id || 'WO-Unknown'} - ${wo.device_id || 'Unknown'}</div>
+                            <div class="alert-badge ${wo.urgency === 'immediate' ? 'critical' : 'high'}">${(wo.urgency || 'scheduled').toUpperCase()}</div>
+                        </div>
+                        <div style="font-size: 0.9em; color: var(--text-secondary); margin: 8px 0;">${wo.description || wo.work_type || 'Work required'}</div>
                         <div style="display: flex; justify-content: space-between; font-size: 0.85em;">
-                            <span>${item.priority.toUpperCase()}</span>
-                            <span>${item.estimated_duration}</span>
+                            <span>👤 ${wo.assigned_to || 'Unassigned'}</span>
+                            <span>⏱️ ${wo.estimated_hours || 0}h</span>
+                            <span>📅 ${wo.created_at || 'TBD'}</span>
                         </div>
                     </div>
                 `).join('');
@@ -889,6 +984,98 @@
             
             container.innerHTML = html;
             updateLastUpdate();
+        }
+        
+        async function loadSparePartsData() {
+            // Load spare parts availability from MCP tools
+            const sparePartsData = await fetchAPI('/spare-parts');
+            if (!sparePartsData) return;
+
+            const container = document.getElementById('maintenance-spare-parts');
+            const parts = sparePartsData.parts || [];
+            const byAvailability = sparePartsData.by_availability || {};
+
+            let html = '<div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm);">';
+            html += '<h2 style="color: var(--primary-blue); margin-bottom: 16px;">🔧 Spare Parts</h2>';
+            
+            // KPI Cards with availability breakdown
+            html += `<div style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">`;
+            html += `<div class="kpi-card"><div class="kpi-label">Total</div><div class="kpi-value" style="color: #1565c0; font-weight: 800;">${sparePartsData.total || 0}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">In Stock</div><div class="kpi-value" style="color: #4caf50; font-weight: 800;">${byAvailability.in_stock || 0}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">On Order</div><div class="kpi-value" style="color: #ffc107; font-weight: 800;">${byAvailability.on_order || 0}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Critical Unavail.</div><div class="kpi-value" style="color: #c62828; font-weight: 800;">${sparePartsData.critical_parts_unavailable || 0}</div></div>`;
+            html += '</div>';
+
+            if (parts.length === 0) {
+                html += '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No spare parts records</div>';
+            } else {
+                html += '<div style="display: flex; flex-direction: column; gap: 12px;">';
+                html += parts.map(part => {
+                    const isUnavailable = part.availability !== 'in_stock';
+                    const isCritical = part.criticality === 'critical';
+                    const alertClass = isCritical && isUnavailable ? 'critical' : 'high';
+                    
+                    return `
+                    <div class="alert-item ${alertClass}">
+                        <div class="alert-header">
+                            <div style="font-weight: 600; color: var(--text-primary);">${part.part_name || 'Unknown'}</div>
+                            <div class="alert-badge ${part.availability === 'in_stock' ? '' : alertClass}" style="background: ${part.availability === 'in_stock' ? '#4caf50' : (part.availability === 'on_order' ? '#ffc107' : '#c62828')}; color: white;">${part.availability.toUpperCase()}</div>
+                        </div>
+                        <div style="font-size: 0.9em; color: var(--text-secondary); margin: 8px 0;">${part.equipment_type || ''}</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85em;">
+                            <span>📦 Qty: ${part.quantity_available || 0}</span>
+                            <span>⏱️ Lead: ${part.lead_time_days || 0}d</span>
+                            <span>💰 $${(part.unit_cost || 0).toFixed(2)}</span>
+                            <span>${isCritical ? '🔴 CRITICAL' : '🟡 ' + (part.criticality || 'medium').toUpperCase()}</span>
+                        </div>
+                    </div>
+                `}).join('');
+                html += '</div>';
+            }
+            html += '</div>';
+            
+            container.innerHTML = html;
+            updateLastUpdate();
+        }
+        
+        function switchMaintenanceTab(event, tabName) {
+            event.preventDefault();
+            
+            // Hide all maintenance sections
+            document.querySelectorAll('.maintenance-section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Remove active class from all buttons
+            document.querySelectorAll('.maintenance-tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.color = '#666';
+                btn.style.borderBottom = '3px solid transparent';
+            });
+            
+            // Show selected section
+            const selectedSection = document.getElementById('maintenance-' + tabName);
+            if (selectedSection) {
+                selectedSection.style.display = 'block';
+            }
+            
+            // Highlight active button
+            event.target.classList.add('active');
+            event.target.style.color = '#1a3a70';
+            event.target.style.borderBottom = '3px solid #1a3a70';
+            
+            // Load data for the selected tab
+            switch(tabName) {
+                case 'schedules':
+                    loadMaintenanceData();
+                    break;
+                case 'work-orders':
+                    loadWorkOrdersData();
+                    break;
+                case 'spare-parts':
+                    loadSparePartsData();
+                    break;
+            }
         }
 
         // ========== LOAD ANALYTICS DATA ==========
@@ -923,9 +1110,9 @@
             html += '<h2 style="color: var(--primary-blue); margin-bottom: 24px;">Analytics & Insights</h2>';
             
             html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">';
-            html += `<div class="kpi-card"><div class="kpi-label">Avg Confidence</div><div class="kpi-value" style="color: var(--accent-green);">${(analyticsData.average_confidence * 100).toFixed(1)}%</div></div>`;
-            html += `<div class="kpi-card"><div class="kpi-label">Avg Degradation</div><div class="kpi-value" style="color: var(--warning-amber);">${(analyticsData.average_degradation * 100).toFixed(1)}%</div></div>`;
-            html += `<div class="kpi-card"><div class="kpi-label">Total Analyzed</div><div class="kpi-value">${analyticsData.total_devices_analyzed}</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Avg Confidence</div><div class="kpi-value" style="color: #00bcd4; font-weight: 800;">${(analyticsData.average_confidence * 100).toFixed(1)}%</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Avg Degradation</div><div class="kpi-value" style="color: #ffc107; font-weight: 800;">${(analyticsData.average_degradation * 100).toFixed(1)}%</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Total Analyzed</div><div class="kpi-value" style="color: #1565c0; font-weight: 800;">${analyticsData.total_devices_analyzed}</div></div>`;
             html += '</div>';
 
             if (analyticsData.devices_by_type && Object.keys(analyticsData.devices_by_type).length > 0) {
@@ -933,7 +1120,7 @@
                 html += '<h3 style="font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Equipment Distribution</h3>';
                 html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">';
                 Object.entries(analyticsData.devices_by_type).forEach(([type, count]) => {
-                    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 6px;"><div style="font-weight: 600; color: var(--primary-blue);">${type}</div><div style="font-size: 1.5em; color: var(--text-secondary);">${count}</div></div>`;
+                    html += `<div style="text-align: center; padding: 12px; background: white; border-radius: 6px; border: 2px solid #1565c0;"><div style="font-weight: 600; color: #1565c0;">${type}</div><div style="font-size: 1.5em; font-weight: 800; color: #00bcd4;">${count}</div></div>`;
                 });
                 html += '</div></div>';
             }

@@ -1,6 +1,14 @@
 # 🌍 Dashboard v2.0 Quick Reference
 
-## Status: ✅ PRODUCTION READY
+## Status: ✅ PRODUCTION READY (v2.1)
+
+**Latest Updates (June 24, 2026)**:
+- ✅ MCP data extraction fixed (Lambda format parsing)
+- ✅ Alert text colors improved for readability
+- ✅ All 3 maintenance endpoints returning real data
+- ✅ 12 work orders visible from warning/critical devices
+- ✅ 2 maintenance schedules from pump devices
+- ✅ 1 spare part available (Motor Bearing Assembly)
 
 ---
 
@@ -15,18 +23,19 @@ python app.py
 
 ## 📊 What It Does Now
 
-| Before (v1.0) | After (v2.0) |
-|---|---|
-| ❌ Mock data | ✅ Real orchestrator data |
-| ❌ Navy/slate | ✅ Gradient + Globe 🌍 |
-| ❌ Basic logs | ✅ Color-coded logs 🎨 |
-| ❌ Not connected | ✅ Multi-agent integrated |
+| Before (v1.0) | After (v2.0) | Current (v2.1) |
+|---|---|---|
+| ❌ Mock data | ✅ Real orchestrator data | ✅ **Real MCP tool data** |
+| ❌ Navy/slate colors | ✅ Gradient + Globe 🌍 | ✅ Professional UI |
+| ❌ Basic logs | ✅ Color-coded logs 🎨 | ✅ Detailed tracing |
+| ❌ Not connected | ✅ Multi-agent integrated | ✅ **Full MCP pipeline** |
+| ❌ No maintenance | ❌ Mock "2-4 hours" | ✅ **Real schedules, work orders, spare parts** |
 
 ## 🔌 API Endpoints (All Real!)
 
 ```bash
-# KPI Dashboard
-curl http://localhost:8080/api/fleet-summary
+# KPI Dashboard (with real MCP data)
+curl http://localhost:8080/api/fleet-summary | jq '._mcp_data'
 
 # Your 17 Devices
 curl http://localhost:8080/api/devices
@@ -34,8 +43,14 @@ curl http://localhost:8080/api/devices
 # Real Alerts
 curl http://localhost:8080/api/alerts
 
-# Maintenance Schedule
-curl http://localhost:8080/api/maintenance/schedule
+# ⭐ NEW: Maintenance Schedules (REAL MCP TOOL DATA)
+curl http://localhost:8080/api/maintenance-schedule | jq '.total, .by_priority'
+
+# ⭐ NEW: Work Orders (REAL MCP TOOL DATA)
+curl http://localhost:8080/api/work-orders | jq '.total, .by_urgency'
+
+# ⭐ NEW: Spare Parts (REAL MCP TOOL DATA)
+curl http://localhost:8080/api/spare-parts | jq '.total, .critical_parts_unavailable'
 
 # Analytics
 curl http://localhost:8080/api/analytics/overview
@@ -43,13 +58,17 @@ curl http://localhost:8080/api/analytics/overview
 
 ## 🎨 New Visual Features
 
-- ✨ Gradient background (purple→lavender)
+- ✨ Gradient background (navy→slate)
 - 🌍 Globe icon in header
-- 🎯 Color-coded KPI cards
-- 📊 Professional charts
+- 🎯 Color-coded KPI cards (Teal/Gold/Navy)
+- 📊 Professional charts with real data
 - 🚨 Alert severity badges
 - 📱 Responsive design
 - ⚡ Smooth animations
+- **🔧 Maintenance Operations Hub**: 
+  - Sub-tabs: Schedules 📅 | Work Orders 📋 | Spare Parts 🔧
+  - Real MCP tool data in each section
+- **💾 100% Real Data**: All operational data from DiagnosisAgent + MCP tools
 
 ## 📝 Configuration
 

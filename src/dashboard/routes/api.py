@@ -4,12 +4,18 @@ Dashboard API Routes - Agentic-Eco-Sentinel
 All endpoints fetch REAL DATA from the Orchestrator service (port 8000).
 Dashboard acts as a client-focused visualization layer.
 
+Integration with Multi-Agent System:
+- Fleet summary aggregates device data from HealthAgent + DiagnosisAgent
+- MCP tool results from DiagnosisAgent are extracted and displayed
+- Sequential fetching prevents overwhelming DiagnosisAgent
+- Real work orders, maintenance schedules, and spare parts from tool_results
+
 Data Flow:
     Dashboard API ←→ Orchestrator API (port 8000)
-         ↓
-    Real Device Data (from data/generated/)
-    Real Agent Analysis
-    Real Insights & Recommendations
+         ↓                    ↓
+    Real Device Data    HealthAgent (classify)
+    Real Agent Analysis DiagnosisAgent (diagnose + MCP tools)
+    Real Tool Results   MCP Tools: schedule-maintenance, create-work-order, get-spare-parts
 """
 
 import logging
@@ -152,7 +158,301 @@ class OrchestratorClient:
 
 
 # Initialize orchestrator client
-orchestrator = OrchestratorClient(settings.ORCHESTRATOR_URL, settings.API_TIMEOUT)
+orchestrator = OrchestratorClient(settings.ORCHESTRATOR_URL, timeout=60)  # Reduced timeout from 300s to 60s
+
+
+# ============================================================================
+# MCP TOOL RESULT EXTRACTORS - Extract real data from tool_results
+# ============================================================================
+
+def extract_maintenance_schedules(tool_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract maintenance schedule data from MCP tool_results['schedule-maintenance']
+    
+    Handles multiple formats:
+    1. Lambda format: {"statusCode": 200, "body": "{...}"}
+    2. Wrapped format: {"success": true, "data": {...}}
+    3. Flat format: direct fields
+    """
+    import json
+    maintenance_schedules = []
+    
+    if not tool_results or 'schedule-maintenance' not in tool_results:
+        return maintenance_schedules
+    
+    schedule_data = tool_results.get('schedule-maintenance')
+    
+    def parse_mcp_response(data):
+        """Parse different MCP response formats"""
+        if isinstance(data, dict):
+            # Check Lambda format: {"statusCode": 200, "body": "{...}"}
+            if 'statusCode' in data and 'body' in data:
+                try:
+                    body_str = data.get('body', '{}')
+                    if isinstance(body_str, str):
+                        body = json.loads(body_str)
+                    else:
+                        body = body_str
+                    return body
+                except (json.JSONDecodeError, ValueError):
+                    return data
+            # Otherwise return as-is (wrapped or flat format)
+            return data
+        return None
+    
+    # Parse the response
+    parsed_data = parse_mcp_response(schedule_data)
+    
+    if isinstance(parsed_data, dict):
+        # Check if it's wrapped format (has 'success' and 'data' fields)
+        if 'success' in parsed_data and 'data' in parsed_data:
+            if parsed_data.get('success'):
+                items = parsed_data.get('data', [])
+                if isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict) and item.get('maintenance_id'):
+                            maintenance_schedules.append({
+                                'maintenance_id': item.get('maintenance_id'),
+                                'device_id': item.get('device_id', ''),
+                                'start_date': item.get('start_date'),
+                                'duration_hours': item.get('duration_hours', 0),
+                                'priority': item.get('priority', 'scheduled'),
+                                'parts_needed': item.get('parts_needed', []),
+                                'estimated_cost': item.get('estimated_cost', 0),
+                                'reason': item.get('reason', ''),
+                                'status': 'scheduled',
+                            })
+                else:
+                    # data is a single object
+                    item = items
+                    if item.get('maintenance_id'):
+                        maintenance_schedules.append({
+                            'maintenance_id': item.get('maintenance_id'),
+                            'device_id': item.get('device_id', ''),
+                            'start_date': item.get('start_date'),
+                            'duration_hours': item.get('duration_hours', 0),
+                            'priority': item.get('priority', 'scheduled'),
+                            'parts_needed': item.get('parts_needed', []),
+                            'estimated_cost': item.get('estimated_cost', 0),
+                            'reason': item.get('reason', ''),
+                            'status': 'scheduled',
+                        })
+        # Otherwise treat as flat format or list
+        elif isinstance(parsed_data.get('maintenance'), list):
+            # Format: {"maintenance": [...]}
+            for item in parsed_data.get('maintenance', []):
+                if isinstance(item, dict) and item.get('maintenance_id'):
+                    maintenance_schedules.append({
+                        'maintenance_id': item.get('maintenance_id'),
+                        'device_id': item.get('device_id', ''),
+                        'start_date': item.get('start_date'),
+                        'duration_hours': item.get('duration_hours', 0),
+                        'priority': item.get('priority', 'scheduled'),
+                        'parts_needed': item.get('parts_needed', []),
+                        'estimated_cost': item.get('estimated_cost', 0),
+                        'reason': item.get('reason', ''),
+                        'status': 'scheduled',
+                    })
+        elif parsed_data.get('maintenance_id'):
+            # Single maintenance object
+            maintenance_schedules.append({
+                'maintenance_id': parsed_data.get('maintenance_id'),
+                'device_id': parsed_data.get('device_id', ''),
+                'start_date': parsed_data.get('start_date'),
+                'duration_hours': parsed_data.get('duration_hours', 0),
+                'priority': parsed_data.get('priority', 'scheduled'),
+                'parts_needed': parsed_data.get('parts_needed', []),
+                'estimated_cost': parsed_data.get('estimated_cost', 0),
+                'reason': parsed_data.get('reason', ''),
+                'status': 'scheduled',
+                    })
+    
+    return maintenance_schedules
+
+
+def extract_work_orders(tool_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract work order data from MCP tool_results['create-work-order']
+    
+    Handles both wrapped format (with 'success' and 'data') and flat format (direct fields)
+    """
+    work_orders = []
+    
+    if not tool_results or 'create-work-order' not in tool_results:
+        return work_orders
+    
+    work_order_data = tool_results.get('create-work-order')
+    
+    if isinstance(work_order_data, dict):
+        # Check if it's wrapped format (has 'success' and 'data' fields)
+        if 'success' in work_order_data and 'data' in work_order_data:
+            if work_order_data.get('success'):
+                work_order_item = work_order_data.get('data', {})
+                if work_order_item.get('work_order_id'):  # Only add if has ID
+                    work_orders.append({
+                        'work_order_id': work_order_item.get('work_order_id'),
+                        'device_id': work_order_item.get('device_id'),
+                        'work_type': work_order_item.get('work_type', 'Maintenance'),
+                        'urgency': work_order_item.get('urgency', 'scheduled'),
+                        'assigned_to': work_order_item.get('assigned_to', 'Unassigned'),
+                        'estimated_hours': work_order_item.get('estimated_hours', 0),
+                        'description': work_order_item.get('description', ''),
+                        'created_at': work_order_item.get('created_at'),
+                        'status': 'open',
+                    })
+        # Otherwise treat as flat format (direct fields)
+        elif work_order_data.get('work_order_id'):
+            work_orders.append({
+                'work_order_id': work_order_data.get('work_order_id'),
+                'device_id': work_order_data.get('device_id', ''),
+                'work_type': work_order_data.get('work_type', 'Maintenance'),
+                'urgency': work_order_data.get('urgency', 'scheduled'),
+                'assigned_to': work_order_data.get('assigned_to', 'Unassigned'),
+                'estimated_hours': work_order_data.get('estimated_hours', 0),
+                'description': work_order_data.get('description', ''),
+                'created_at': work_order_data.get('created_at'),
+                'status': work_order_data.get('status', 'open'),
+            })
+    elif isinstance(work_order_data, list):
+        for item in work_order_data:
+            if isinstance(item, dict):
+                # Check if it's wrapped format
+                if 'success' in item and 'data' in item:
+                    if item.get('success'):
+                        work_order_item = item.get('data', {})
+                        if work_order_item.get('work_order_id'):
+                            work_orders.append({
+                                'work_order_id': work_order_item.get('work_order_id'),
+                                'device_id': work_order_item.get('device_id'),
+                                'work_type': work_order_item.get('work_type', 'Maintenance'),
+                                'urgency': work_order_item.get('urgency', 'scheduled'),
+                                'assigned_to': work_order_item.get('assigned_to', 'Unassigned'),
+                                'estimated_hours': work_order_item.get('estimated_hours', 0),
+                                'description': work_order_item.get('description', ''),
+                                'created_at': work_order_item.get('created_at'),
+                                'status': 'open',
+                            })
+                # Otherwise treat as flat format
+                elif item.get('work_order_id'):
+                    work_orders.append({
+                        'work_order_id': item.get('work_order_id'),
+                        'device_id': item.get('device_id', ''),
+                        'work_type': item.get('work_type', 'Maintenance'),
+                        'urgency': item.get('urgency', 'scheduled'),
+                        'assigned_to': item.get('assigned_to', 'Unassigned'),
+                        'estimated_hours': item.get('estimated_hours', 0),
+                        'description': item.get('description', ''),
+                        'created_at': item.get('created_at'),
+                        'status': item.get('status', 'open'),
+                    })
+    
+    return work_orders
+
+
+def extract_spare_parts(tool_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract spare parts data from MCP tool_results['get-spare-parts']
+    
+    Handles multiple formats:
+    1. Lambda format: {"statusCode": 200, "body": "{...}"}
+    2. Wrapped format: {"success": true, "data": [...]}
+    3. Flat format: list or direct dict
+    
+    Maps different field names:
+    - stock_quantity or quantity_available → quantity_available
+    - category or equipment_type → equipment_type
+    - Derives availability from quantity
+    """
+    import json
+    spare_parts = []
+    
+    if not tool_results or 'get-spare-parts' not in tool_results:
+        return spare_parts
+    
+    parts_data = tool_results.get('get-spare-parts')
+    
+    def parse_mcp_response(data):
+        """Parse different MCP response formats"""
+        if isinstance(data, dict):
+            # Check Lambda format: {"statusCode": 200, "body": "{...}"}
+            if 'statusCode' in data and 'body' in data:
+                try:
+                    body_str = data.get('body', '{}')
+                    if isinstance(body_str, str):
+                        body = json.loads(body_str)
+                    else:
+                        body = body_str
+                    return body
+                except (json.JSONDecodeError, ValueError):
+                    return data
+            # Otherwise return as-is (wrapped or flat format)
+            return data
+        return None
+    
+    def normalize_part(p):
+        """Normalize part fields from different MCP response formats"""
+        if not isinstance(p, dict) or not p.get('part_id'):
+            return None
+        
+        # Map quantity field (could be stock_quantity or quantity_available)
+        qty = p.get('quantity_available') or p.get('stock_quantity') or 0
+        
+        # Determine availability from quantity or explicit field
+        if 'availability' in p:
+            availability = p.get('availability')
+        else:
+            # Calculate from quantity
+            availability = 'in_stock' if qty > 0 else 'out_of_stock'
+        
+        # Map equipment type (could be equipment_type or category)
+        equipment_type = p.get('equipment_type') or p.get('category', '')
+        
+        # Determine criticality (default to medium-high for parts)
+        criticality = p.get('criticality', 'high')
+        
+        return {
+            'part_id': p.get('part_id'),
+            'part_name': p.get('part_name', ''),
+            'equipment_type': equipment_type,
+            'availability': availability,
+            'quantity_available': qty,
+            'lead_time_days': p.get('lead_time_days', 0),
+            'unit_cost': p.get('unit_cost', 0),
+            'criticality': criticality,
+        }
+    
+    # Parse the response
+    parsed_data = parse_mcp_response(parts_data)
+    
+    if isinstance(parsed_data, dict):
+        # Check if it's wrapped format (has 'success' and 'data' fields)
+        if 'success' in parsed_data and 'data' in parsed_data:
+            if parsed_data.get('success'):
+                parts_list = parsed_data.get('data', [])
+                if isinstance(parts_list, list):
+                    for p in parts_list:
+                        normalized = normalize_part(p)
+                        if normalized:
+                            spare_parts.append(normalized)
+        # Check for parts list in parsed data
+        elif isinstance(parsed_data.get('parts'), list):
+            # Format: {"parts": [...]}
+            for p in parsed_data.get('parts', []):
+                normalized = normalize_part(p)
+                if normalized:
+                    spare_parts.append(normalized)
+        # Single part object
+        elif parsed_data.get('part_id'):
+            normalized = normalize_part(parsed_data)
+            if normalized:
+                spare_parts.append(normalized)
+    elif isinstance(parts_data, list):
+        for p in parts_data:
+            normalized = normalize_part(p)
+            if normalized:
+                spare_parts.append(normalized)
+    
+    return spare_parts
 
 
 # ============================================================================
@@ -162,13 +462,18 @@ orchestrator = OrchestratorClient(settings.ORCHESTRATOR_URL, settings.API_TIMEOU
 @router.get("/fleet-summary")
 async def fleet_summary():
     """
-    Fleet Summary KPIs - PRODUCTION GRADE
+    Fleet Summary KPIs - PRODUCTION GRADE WITH REAL MCP DATA
     
-    Returns aggregated device health metrics from orchestrator.
+    Returns aggregated device health metrics from orchestrator, including:
+    - Device health distribution (healthy, warning, critical)
+    - Real work orders from MCP tool results
+    - Real maintenance schedules from MCP tool results
+    - Spare parts availability
+    
     - Caches for 5-6 minutes (360s)
     - Option 2: Detects new devices via device list check (< 100ms)
     - Prevents concurrent fetches with request queue
-    - Includes analytics data for consistency
+    - Extracts real data from DiagnosisAgent MCP tool results (sequential fetching)
     """
     logger.info("📊 Fleet summary requested")
     
@@ -201,8 +506,13 @@ async def fleet_summary():
         logger.debug(f"⏳ Fetch already in progress ({fetch_queue.fetch_type}), returning cache or error")
         if cached:
             return cached
-        # If no cache and fetch in progress, wait/return error
-        raise HTTPException(status_code=503, detail="Device fetch in progress, please retry in 5 seconds")
+        # If no cache and fetch in progress, return 503 with Retry-After header
+        # Frontend will automatically retry with exponential backoff
+        logger.info(f"📊 Device fetch in progress, client should retry in 2-3 seconds")
+        raise HTTPException(
+            status_code=503,
+            detail="Loading fleet data... Please wait and retry. Dashboard fetches all devices sequentially (40-50 seconds on first load)."
+        )
     
     # Start protected fetch with queue
     fetch_queue.start_fetch('auto')
@@ -218,20 +528,60 @@ async def fleet_summary():
         device_ids = devices_list_data.get('devices', [])
         logger.debug(f"📋 Fetching {len(device_ids)} devices sequentially")
         
-        # Fetch health status for each device SEQUENTIALLY with longer timeout
+        # Fetch health status and MCP tool results for each device SEQUENTIALLY
         # (Parallel requests overwhelm the diagnosis agent)
         health_statuses = {}
+        device_details = {}  # Store full device details for problematic devices
         confidence_scores = []
         equipment_counts = {}
+        
+        # Aggregate MCP tool results
+        all_work_orders = []
+        all_maintenance_schedules = []
+        all_spare_parts = {}  # Deduplicated by part_id
         
         for device_id in device_ids:
             device_data = await orchestrator.get(f"/devices/{device_id}")
             if device_data:
-                health_statuses[device_id] = device_data.get('health_status', 'unknown')
-                confidence_scores.append(device_data.get('confidence', 0))
+                status = device_data.get('health_status', 'unknown')
+                health_statuses[device_id] = status
+                confidence = device_data.get('confidence', 0)
+                confidence_scores.append(confidence)
                 
                 equipment_type = device_id.split('-')[0].upper()
                 equipment_counts[equipment_type] = equipment_counts.get(equipment_type, 0) + 1
+                
+                # Store details for critical and warning devices
+                if status in ['critical', 'warning']:
+                    device_details[device_id] = {
+                        'device_id': device_id,
+                        'health_status': status,
+                        'equipment_type': equipment_type,
+                        'confidence': confidence,
+                        'degradation_score': round(1 - confidence, 3),
+                        'diagnosis': device_data.get('diagnosis', ''),
+                        'recommendation': device_data.get('recommendation_details', ''),
+                    }
+                
+                # Extract MCP tool results for this device
+                tool_results = device_data.get('tool_results', {})
+                
+                # Extract work orders
+                work_orders = extract_work_orders(tool_results)
+                for wo in work_orders:
+                    all_work_orders.append(wo)
+                
+                # Extract maintenance schedules
+                maintenance_schedules = extract_maintenance_schedules(tool_results)
+                for ms in maintenance_schedules:
+                    all_maintenance_schedules.append(ms)
+                
+                # Extract spare parts (deduplicate by part_id)
+                spare_parts = extract_spare_parts(tool_results)
+                for part in spare_parts:
+                    part_id = part.get('part_id')
+                    if part_id and part_id not in all_spare_parts:
+                        all_spare_parts[part_id] = part
             # Don't mark as unknown - just skip if timeout
         
         # Calculate metrics
@@ -252,7 +602,14 @@ async def fleet_summary():
         health_percent = round((healthy / total * 100)) if total > 0 else 0
         
         logger.info(f"✅ Fleet: {healthy}/{total} healthy, {warning} warning, {critical} critical")
+        logger.info(f"📋 Work Orders: {len(all_work_orders)} | Maintenance: {len(all_maintenance_schedules)} | Spare Parts: {len(all_spare_parts)}")
         logger.debug(f"📊 Analytics: {avg_confidence:.2%} avg confidence, {list(equipment_counts.keys())} equipment types")
+        
+        # Sort problematic devices by criticality (critical first, then warning)
+        sorted_problematic = sorted(
+            device_details.values(),
+            key=lambda d: (0 if d['health_status'] == 'critical' else 1, d['device_id'])
+        )
         
         result = {
             "timestamp": datetime.now().isoformat(),
@@ -262,6 +619,13 @@ async def fleet_summary():
             "critical_devices": critical,
             "fleet_health_percent": health_percent,
             "degradation_trend": "stable",
+            "_problematic_devices": sorted_problematic,  # All problematic devices
+            "_mcp_data": {
+                "work_orders": len(all_work_orders),
+                "maintenance_schedules": len(all_maintenance_schedules),
+                "spare_parts_available": len(all_spare_parts),
+                "urgent_work_orders": sum(1 for wo in all_work_orders if wo.get('urgency') in ['immediate', 'urgent']),
+            },
             "_analytics": {
                 "average_degradation": round(avg_degradation, 3),
                 "average_confidence": round(avg_confidence, 3),
@@ -272,7 +636,7 @@ async def fleet_summary():
         
         # Cache the result
         data_cache.set(result)
-        logger.info(f"💾 Cached fleet data (TTL: 360s, devices: {total})")
+        logger.info(f"💾 Cached fleet data (TTL: 360s, devices: {total}, WOs: {len(all_work_orders)})")
         
         return result
         
@@ -404,7 +768,7 @@ async def hard_refresh_cache():
     
     Used by the Hard Refresh button to force immediate data fetch
     bypassing the auto-refresh mechanism and request queue.
-    Returns fresh data directly.
+    Returns fresh data directly with real MCP tool results aggregated.
     """
     logger.info("🔄 Hard refresh requested - clearing cache")
     
@@ -432,6 +796,11 @@ async def hard_refresh_cache():
         confidence_scores = []
         equipment_counts = {}
         
+        # Aggregate MCP tool results
+        all_work_orders = []
+        all_maintenance_schedules = []
+        all_spare_parts = {}
+        
         for device_id in device_ids:
             device_data = await orchestrator.get(f"/devices/{device_id}")
             if device_data:
@@ -439,6 +808,22 @@ async def hard_refresh_cache():
                 confidence_scores.append(device_data.get('confidence', 0))
                 equipment_type = device_id.split('-')[0].upper()
                 equipment_counts[equipment_type] = equipment_counts.get(equipment_type, 0) + 1
+                
+                # Extract MCP tool results
+                tool_results = device_data.get('tool_results', {})
+                
+                # Extract and aggregate all tool results
+                work_orders = extract_work_orders(tool_results)
+                all_work_orders.extend(work_orders)
+                
+                maintenance_schedules = extract_maintenance_schedules(tool_results)
+                all_maintenance_schedules.extend(maintenance_schedules)
+                
+                spare_parts = extract_spare_parts(tool_results)
+                for part in spare_parts:
+                    part_id = part.get('part_id')
+                    if part_id and part_id not in all_spare_parts:
+                        all_spare_parts[part_id] = part
         
         total = len(device_ids)
         healthy = sum(1 for status in health_statuses.values() if status == 'healthy')
@@ -457,6 +842,12 @@ async def hard_refresh_cache():
             "critical_devices": critical,
             "fleet_health_percent": health_percent,
             "degradation_trend": "stable",
+            "_mcp_data": {
+                "work_orders": len(all_work_orders),
+                "maintenance_schedules": len(all_maintenance_schedules),
+                "spare_parts_available": len(all_spare_parts),
+                "urgent_work_orders": sum(1 for wo in all_work_orders if wo.get('urgency') in ['immediate', 'urgent']),
+            },
             "_analytics": {
                 "average_degradation": round(avg_degradation, 3),
                 "average_confidence": round(avg_confidence, 3),
@@ -467,7 +858,7 @@ async def hard_refresh_cache():
         }
         
         data_cache.set(result)
-        logger.info(f"✅ Hard refresh complete: {healthy}/{total} healthy, {warning} warning, {critical} critical")
+        logger.info(f"✅ Hard refresh complete: {healthy}/{total} healthy, {warning} warning, {critical} critical (WOs: {len(all_work_orders)})")
         
         return result
         
@@ -555,8 +946,10 @@ async def maintenance_schedule():
     
     Derived from device health states and agent recommendations.
     Shows predicted maintenance needs based on agent analysis.
+    
+    DEPRECATED: Use /maintenance-schedule endpoint instead for real MCP data.
     """
-    logger.info("🔧 Maintenance schedule requested")
+    logger.info("🔧 Maintenance schedule requested (legacy endpoint)")
     
     # Get all device IDs
     devices_list_data = await orchestrator.get("/devices")
@@ -597,6 +990,314 @@ async def maintenance_schedule():
         "work_orders": len([m for m in maintenance_items if m['priority'] == 'urgent']),
         "scheduled_maintenance": len([m for m in maintenance_items if m['priority'] == 'scheduled']),
         "items": maintenance_items,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+# ============================================================================
+# NEW ENDPOINTS - Real MCP Tool Data
+# ============================================================================
+
+@router.get("/maintenance-schedule")
+async def get_maintenance_schedules():
+    """
+    Real maintenance schedules from MCP tool results
+    
+    Fetches data from DiagnosisAgent's schedule-maintenance tool
+    Uses cached data from fleet-summary for performance (360s TTL)
+    
+    Returns:
+    {
+        'schedules': [
+            {
+                'maintenance_id': '...',
+                'device_id': '...',
+                'start_date': '...',
+                'duration_hours': int,
+                'priority': 'urgent|scheduled',
+                'parts_needed': [...],
+                'estimated_cost': float,
+                'reason': '...',
+                'status': 'scheduled'
+            }
+        ],
+        'total': int,
+        'by_priority': {'urgent': int, 'scheduled': int},
+        'total_estimated_cost': float
+    }
+    """
+    logger.info("📅 Maintenance schedule endpoint (real MCP data)")
+    
+    # Check if we have cached fleet data with maintenance schedules already extracted
+    cached = data_cache.get()
+    if cached and 'maintenance_schedules' in cached:
+        all_schedules = cached.get('maintenance_schedules', [])
+        logger.debug(f"📦 Using cached maintenance schedules: {len(all_schedules)} schedules from cache")
+    else:
+        # If no cache, fetch from orchestrator
+        logger.debug("💾 No cache available, fetching fresh data...")
+        
+        # Get all device IDs
+        devices_list_data = await orchestrator.get("/devices")
+        
+        if not devices_list_data:
+            logger.error("Failed to fetch device list")
+            raise HTTPException(status_code=503, detail="Orchestrator unavailable")
+        
+        device_ids = devices_list_data.get('devices', [])
+        
+        # Aggregate all maintenance schedules from all devices (sequential)
+        all_schedules = []
+        
+        for device_id in device_ids:
+            device_data = await orchestrator.get(f"/devices/{device_id}")
+            
+            if not device_data:
+                continue
+            
+            # Extract maintenance schedules from MCP tool results
+            tool_results = device_data.get('tool_results', {})
+            schedules = extract_maintenance_schedules(tool_results)
+            
+            all_schedules.extend(schedules)
+    
+    # Calculate statistics
+    urgent_count = sum(1 for s in all_schedules if s.get('priority') == 'urgent')
+    scheduled_count = sum(1 for s in all_schedules if s.get('priority') == 'scheduled')
+    total_cost = sum(s.get('estimated_cost', 0) for s in all_schedules)
+    
+    # Sort by priority (urgent first) then by start_date
+    all_schedules.sort(
+        key=lambda s: (0 if s.get('priority') == 'urgent' else 1, s.get('start_date', ''))
+    )
+    
+    logger.info(f"✅ {len(all_schedules)} maintenance schedules retrieved ({urgent_count} urgent)")
+    
+    return {
+        "schedules": all_schedules,
+        "total": len(all_schedules),
+        "by_priority": {
+            "urgent": urgent_count,
+            "scheduled": scheduled_count,
+        },
+        "total_estimated_cost": round(total_cost, 2),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@router.get("/work-orders")
+async def get_work_orders(status: Optional[str] = Query(None)):
+    """
+    Real work orders from MCP tool results
+    
+    Fetches data from DiagnosisAgent's create-work-order tool
+    Uses cached data from fleet-summary for performance (360s TTL)
+    
+    Query Parameters:
+        - status: Filter by 'open', 'in_progress', 'completed' (optional)
+    
+    Returns:
+    {
+        'work_orders': [
+            {
+                'work_order_id': '...',
+                'device_id': '...',
+                'work_type': '...',
+                'urgency': 'immediate|urgent|scheduled',
+                'assigned_to': '...',
+                'estimated_hours': int,
+                'description': '...',
+                'created_at': '...',
+                'status': 'open|in_progress|completed'
+            }
+        ],
+        'total': int,
+        'by_urgency': {'immediate': int, 'urgent': int, 'scheduled': int},
+        'total_estimated_hours': int
+    }
+    """
+    logger.info(f"📋 Work orders endpoint (status filter: {status})")
+    
+    # Check if we have cached fleet data with work orders already extracted
+    cached = data_cache.get()
+    if cached and 'work_orders' in cached:
+        all_work_orders = cached.get('work_orders', [])
+        logger.debug(f"📦 Using cached work orders: {len(all_work_orders)} orders from cache")
+    else:
+        # If no cache, fetch from orchestrator
+        logger.debug("💾 No cache available, fetching fresh data...")
+        
+        # Get all device IDs
+        devices_list_data = await orchestrator.get("/devices")
+        
+        if not devices_list_data:
+            logger.error("Failed to fetch device list")
+            raise HTTPException(status_code=503, detail="Orchestrator unavailable")
+        
+        device_ids = devices_list_data.get('devices', [])
+        
+        # Aggregate all work orders from all devices (sequential)
+        all_work_orders = []
+        
+        for device_id in device_ids:
+            device_data = await orchestrator.get(f"/devices/{device_id}")
+            
+            if not device_data:
+                continue
+            
+            # Extract work orders from MCP tool results
+            tool_results = device_data.get('tool_results', {})
+            work_orders = extract_work_orders(tool_results)
+            
+            all_work_orders.extend(work_orders)
+    
+    # Apply status filter if provided
+    if status:
+        all_work_orders = [wo for wo in all_work_orders if wo.get('status') == status]
+        logger.debug(f"Filtered work orders by status '{status}': {len(all_work_orders)} remaining")
+    
+    # Calculate statistics
+    immediate_count = sum(1 for wo in all_work_orders if wo.get('urgency') == 'immediate')
+    urgent_count = sum(1 for wo in all_work_orders if wo.get('urgency') == 'urgent')
+    scheduled_count = sum(1 for wo in all_work_orders if wo.get('urgency') == 'scheduled')
+    total_hours = sum(wo.get('estimated_hours', 0) for wo in all_work_orders)
+    
+    # Sort by urgency (immediate → urgent → scheduled)
+    urgency_order = {'immediate': 0, 'urgent': 1, 'scheduled': 2}
+    all_work_orders.sort(
+        key=lambda wo: (urgency_order.get(wo.get('urgency'), 3), wo.get('created_at', ''))
+    )
+    
+    logger.info(f"✅ {len(all_work_orders)} work orders retrieved ({immediate_count} immediate, {urgent_count} urgent)")
+    
+    return {
+        "work_orders": all_work_orders,
+        "total": len(all_work_orders),
+        "by_urgency": {
+            "immediate": immediate_count,
+            "urgent": urgent_count,
+            "scheduled": scheduled_count,
+        },
+        "total_estimated_hours": total_hours,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@router.get("/spare-parts")
+async def get_spare_parts(availability: Optional[str] = Query(None)):
+    """
+    Spare parts availability from MCP tool results
+    
+    Fetches data from DiagnosisAgent's get-spare-parts tool
+    Uses cached data from fleet-summary for performance (360s TTL)
+    Deduplicates parts (if same part requested across multiple devices)
+    
+    Query Parameters:
+        - availability: Filter by 'in_stock', 'on_order', 'out_of_stock' (optional)
+    
+    Returns:
+    {
+        'parts': [
+            {
+                'part_id': '...',
+                'part_name': '...',
+                'equipment_type': '...',
+                'availability': 'in_stock|on_order|out_of_stock',
+                'quantity_available': int,
+                'lead_time_days': int,
+                'unit_cost': float,
+                'criticality': 'critical|high|medium|low'
+            }
+        ],
+        'total': int,
+        'by_availability': {'in_stock': int, 'on_order': int, 'out_of_stock': int},
+        'critical_parts_unavailable': int,
+        'total_value': float
+    }
+    """
+    logger.info(f"🔧 Spare parts endpoint (availability filter: {availability})")
+    
+    # Check if we have cached fleet data with spare parts already extracted
+    cached = data_cache.get()
+    if cached and 'spare_parts' in cached:
+        all_parts = cached.get('spare_parts', [])
+        logger.debug(f"📦 Using cached spare parts: {len(all_parts)} parts from cache")
+    else:
+        # If no cache, fetch from orchestrator
+        logger.debug("💾 No cache available, fetching fresh data...")
+        
+        # Get all device IDs
+        devices_list_data = await orchestrator.get("/devices")
+        
+        if not devices_list_data:
+            logger.error("Failed to fetch device list")
+            raise HTTPException(status_code=503, detail="Orchestrator unavailable")
+        
+        device_ids = devices_list_data.get('devices', [])
+        
+        # Aggregate all spare parts from all devices, deduplicating by part_id (sequential)
+        all_parts_dict = {}  # {part_id: part_data}
+        
+        for device_id in device_ids:
+            device_data = await orchestrator.get(f"/devices/{device_id}")
+            
+            if not device_data:
+                continue
+            
+            # Extract spare parts from MCP tool results
+            tool_results = device_data.get('tool_results', {})
+            spare_parts = extract_spare_parts(tool_results)
+            
+            # Deduplicate by part_id (keep first occurrence or merge if needed)
+            for part in spare_parts:
+                part_id = part.get('part_id')
+                if part_id and part_id not in all_parts_dict:
+                    all_parts_dict[part_id] = part
+        
+        # Convert to list
+        all_parts = list(all_parts_dict.values())
+    
+    # Apply availability filter if provided
+    if availability:
+        all_parts = [p for p in all_parts if p.get('availability') == availability]
+        logger.debug(f"Filtered spare parts by availability '{availability}': {len(all_parts)} remaining")
+    
+    # Calculate statistics
+    in_stock_count = sum(1 for p in all_parts if p.get('availability') == 'in_stock')
+    on_order_count = sum(1 for p in all_parts if p.get('availability') == 'on_order')
+    out_of_stock_count = sum(1 for p in all_parts if p.get('availability') == 'out_of_stock')
+    critical_unavailable = sum(
+        1 for p in all_parts 
+        if p.get('criticality') == 'critical' and p.get('availability') != 'in_stock'
+    )
+    total_value = sum(
+        p.get('unit_cost', 0) * p.get('quantity_available', 0) 
+        for p in all_parts 
+        if p.get('availability') == 'in_stock'
+    )
+    
+    # Sort by criticality (critical first) then availability (out_of_stock first)
+    availability_order = {'out_of_stock': 0, 'on_order': 1, 'in_stock': 2}
+    criticality_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+    all_parts.sort(
+        key=lambda p: (
+            criticality_order.get(p.get('criticality'), 4),
+            availability_order.get(p.get('availability'), 3)
+        )
+    )
+    
+    logger.info(f"✅ {len(all_parts)} spare parts retrieved ({critical_unavailable} critical parts unavailable)")
+    
+    return {
+        "parts": all_parts,
+        "total": len(all_parts),
+        "by_availability": {
+            "in_stock": in_stock_count,
+            "on_order": on_order_count,
+            "out_of_stock": out_of_stock_count,
+        },
+        "critical_parts_unavailable": critical_unavailable,
+        "total_value_in_stock": round(total_value, 2),
         "timestamp": datetime.now().isoformat(),
     }
 
