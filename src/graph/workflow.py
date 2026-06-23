@@ -144,7 +144,7 @@ class OrchestrationWorkflow:
             # Track that HealthAgent was used
             state['agents_used'].append('HealthAgent')
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     f"{self.health_agent_url}/analyze",
                     json={
@@ -212,7 +212,7 @@ class OrchestrationWorkflow:
             # Track that DiagnosisAgent was used
             state['agents_used'].append('DiagnosisAgent')
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     f"{self.diagnosis_agent_url}/diagnose",
                     json={

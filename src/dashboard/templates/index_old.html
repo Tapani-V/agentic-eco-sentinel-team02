@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic-Eco-Sentinel Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    
+    <style>
+        /* ========================================================================
+           PROFESSIONAL COLOR SCHEME
+           ======================================================================== */
+        :root {
+            /* Primary Colors */
+            --color-navy: #1a2d4d;
+            --color-slate: #475569;
+            --color-bg-main: #f8fafc;
+            --color-bg-card: #ffffff;
+            
+            /* Semantic Colors */
+            --color-success: #10b981;     /* Healthy - Emerald Green */
+            --color-warning: #f59e0b;     /* Warning - Amber */
+            --color-critical: #dc2626;    /* Critical - Crimson Red */
+            --color-info: #0ea5e9;        /* Info - Sky Blue */
+            --color-teal: #0d9488;        /* Accent - Teal */
+            --color-purple: #8b5cf6;      /* Secondary - Purple */
+            
+            /* Text Colors */
+            --color-text-primary: #1a2d4d;
+            --color-text-secondary: #64748b;
+            --color-text-muted: #cbd5e1;
+            
+            /* Spacing */
+            --spacing-xs: 4px;
+            --spacing-sm: 8px;
+            --spacing-md: 16px;
+            --spacing-lg: 24px;
+            --spacing-xl: 32px;
+            --spacing-2xl: 48px;
+        }
+
+        /* ========================================================================
+           RESET & BASE STYLES
+           ======================================================================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--color-bg-main);
+            color: var(--color-text-primary);
+            line-height: 1.6;
+        }
+
+        /* ========================================================================
+           HEADER
+           ======================================================================== */
+        header {
+            background-color: var(--color-navy);
+            color: white;
+            padding: var(--spacing-lg) var(--spacing-xl);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            height: 70px;
+        }
+
+        header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .header-right {
+            display: flex;
+            gap: var(--spacing-lg);
+            align-items: center;
+        }
+
+        .header-right input {
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 14px;
+        }
+
+        .header-right input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .header-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s ease;
+        }
+
+        .header-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* ========================================================================
+           KPI CARDS ROW (Sticky)
+           ======================================================================== */
+        .kpi-row {
+            background-color: var(--color-bg-main);
+            padding: var(--spacing-md) var(--spacing-xl);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--spacing-md);
+            position: sticky;
+            top: 70px;
+            z-index: 99;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .kpi-card {
+            background-color: var(--color-bg-card);
+            padding: var(--spacing-md);
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s ease;
+        }
+
+        .kpi-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .kpi-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .kpi-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--color-navy);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .kpi-indicator {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            font-size: 12px;
+        }
+
+        .kpi-indicator.healthy {
+            color: var(--color-success);
+        }
+
+        .kpi-indicator.warning {
+            color: var(--color-warning);
+        }
+
+        .kpi-indicator.critical {
+            color: var(--color-critical);
+        }
+
+        /* ========================================================================
+           CONTAINER & MAIN LAYOUT
+           ======================================================================== */
+        .container {
+            max-width: 1920px;
+            margin: 0 auto;
+        }
+
+        main {
+            padding: var(--spacing-lg);
+        }
+
+        /* ========================================================================
+           TABS NAVIGATION
+           ======================================================================== */
+        .tabs-nav {
+            display: flex;
+            gap: var(--spacing-lg);
+            border-bottom: 2px solid #e2e8f0;
+            background-color: var(--color-bg-card);
+            padding: 0 var(--spacing-xl);
+            margin-bottom: var(--spacing-lg);
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: var(--spacing-md) 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            position: relative;
+            transition: color 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover {
+            color: var(--color-navy);
+        }
+
+        .tab-btn.active {
+            color: var(--color-teal);
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background-color: var(--color-teal);
+        }
+
+        /* ========================================================================
+           TAB CONTENT
+           ======================================================================== */
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        /* ========================================================================
+           GRID LAYOUTS
+           ======================================================================== */
+        .grid-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--spacing-lg);
+        }
+
+        .grid-3col {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: var(--spacing-lg);
+        }
+
+        .grid-4col {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--spacing-lg);
+        }
+
+        /* ========================================================================
+           CARD STYLING
+           ======================================================================== */
+        .card {
+            background-color: var(--color-bg-card);
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: var(--spacing-md);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s ease;
+        }
+
+        .card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--color-navy);
+            margin-bottom: var(--spacing-md);
+            padding-bottom: var(--spacing-md);
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .card-left-border {
+            border-left: 4px solid var(--color-info);
+        }
+
+        .card-left-border.healthy {
+            border-left-color: var(--color-success);
+        }
+
+        .card-left-border.warning {
+            border-left-color: var(--color-warning);
+        }
+
+        .card-left-border.critical {
+            border-left-color: var(--color-critical);
+        }
+
+        /* ========================================================================
+           CHARTS CONTAINER
+           ======================================================================== */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-bottom: var(--spacing-md);
+        }
+
+        .chart-container.small {
+            height: 200px;
+        }
+
+        .chart-container.large {
+            height: 400px;
+        }
+
+        /* ========================================================================
+           HEALTH BARS
+           ======================================================================== */
+        .health-bar-container {
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .health-bar-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .health-bar {
+            width: 100%;
+            height: 8px;
+            background-color: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .health-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .health-bar-fill.healthy {
+            background: linear-gradient(90deg, #10b981, #059669);
+        }
+
+        .health-bar-fill.warning {
+            background: linear-gradient(90deg, #f59e0b, #d97706);
+        }
+
+        .health-bar-fill.critical {
+            background: linear-gradient(90deg, #dc2626, #b91c1c);
+        }
+
+        /* ========================================================================
+           STATUS BADGES
+           ======================================================================== */
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 16px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge.healthy {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge.warning {
+            background-color: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge.critical {
+            background-color: #fee2e2;
+            color: #7f1d1d;
+        }
+
+        /* ========================================================================
+           BUTTONS
+           ======================================================================== */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background-color: var(--color-teal);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #0f766e;
+        }
+
+        .btn-secondary {
+            background-color: #e2e8f0;
+            color: var(--color-navy);
+        }
+
+        .btn-secondary:hover {
+            background-color: #cbd5e1;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        /* ========================================================================
+           LOADING STATE
+           ======================================================================== */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            color: var(--color-text-secondary);
+        }
+
+        .spinner {
+            border: 3px solid #e2e8f0;
+            border-top-color: var(--color-teal);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ========================================================================
+           RESPONSIVE DESIGN
+           ======================================================================== */
+        @media (max-width: 1200px) {
+            .grid-3col {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .grid-4col {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            header {
+                padding: var(--spacing-md);
+                flex-direction: column;
+                gap: var(--spacing-md);
+            }
+
+            header h1 {
+                font-size: 18px;
+            }
+
+            .header-right {
+                width: 100%;
+                gap: var(--spacing-sm);
+            }
+
+            .header-right input {
+                flex: 1;
+            }
+
+            .kpi-row {
+                grid-template-columns: repeat(2, 1fr);
+                padding: var(--spacing-sm);
+            }
+
+            .grid-2col,
+            .grid-3col,
+            .grid-4col {
+                grid-template-columns: 1fr;
+            }
+
+            main {
+                padding: var(--spacing-md);
+            }
+
+            .tabs-nav {
+                padding: 0 var(--spacing-md);
+                gap: var(--spacing-md);
+            }
+
+            .tab-btn {
+                padding: var(--spacing-sm) 0;
+                font-size: 12px;
+            }
+
+            .chart-container {
+                height: 250px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            header h1 {
+                font-size: 16px;
+            }
+
+            .kpi-row {
+                grid-template-columns: 1fr;
+            }
+
+            .kpi-value {
+                font-size: 20px;
+            }
+
+            .card-header {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- ====================================================================
+         HEADER
+         ==================================================================== -->
+    <header>
+        <h1>🎯 Agentic-Eco-Sentinel Dashboard</h1>
+        <div class="header-right">
+            <input type="text" placeholder="Search devices...">
+            <button class="header-btn" onclick="refreshDashboard()">🔄 Refresh</button>
+            <button class="header-btn" onclick="openSettings()">⚙️ Settings</button>
+        </div>
+    </header>
+
+    <!-- ====================================================================
+         KPI CARDS ROW (STICKY)
+         ==================================================================== -->
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <div class="kpi-label">Fleet Health</div>
+            <div class="kpi-value">87%</div>
+            <div class="kpi-indicator healthy">✓ Excellent</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Warning Devices</div>
+            <div class="kpi-value">12</div>
+            <div class="kpi-indicator warning">⚠ Attention Needed</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Critical Devices</div>
+            <div class="kpi-value">3</div>
+            <div class="kpi-indicator critical">✗ Urgent</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Up-to-Date Maintenance</div>
+            <div class="kpi-value">156/201</div>
+            <div class="kpi-indicator healthy">✓ 78%</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- ================================================================
+             TABS NAVIGATION
+             ================================================================ -->
+        <div class="tabs-nav">
+            <button class="tab-btn active" data-tab="overview" onclick="switchTab(event, 'overview')">
+                📊 Overview
+            </button>
+            <button class="tab-btn" data-tab="devices" onclick="switchTab(event, 'devices')">
+                📱 Devices
+            </button>
+            <button class="tab-btn" data-tab="maintenance" onclick="switchTab(event, 'maintenance')">
+                🔧 Maintenance
+            </button>
+            <button class="tab-btn" data-tab="analytics" onclick="switchTab(event, 'analytics')">
+                📈 Analytics
+            </button>
+            <button class="tab-btn" data-tab="alerts" onclick="switchTab(event, 'alerts')">
+                🚨 Alerts
+            </button>
+        </div>
+
+        <main>
+            <!-- ============================================================
+                 TAB 1: OVERVIEW
+                 ============================================================ -->
+            <div id="overview" class="tab-content active">
+                <h2>Fleet Dashboard Overview</h2>
+                <p>Loading overview data...</p>
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 TAB 2: DEVICES
+                 ============================================================ -->
+            <div id="devices" class="tab-content">
+                <h2>Device Management</h2>
+                <p>Loading devices...</p>
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 TAB 3: MAINTENANCE
+                 ============================================================ -->
+            <div id="maintenance" class="tab-content">
+                <h2>Maintenance Operations</h2>
+                <p>Loading maintenance data...</p>
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 TAB 4: ANALYTICS
+                 ============================================================ -->
+            <div id="analytics" class="tab-content">
+                <h2>Analytics & Insights</h2>
+                <p>Loading analytics...</p>
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 TAB 5: ALERTS
+                 ============================================================ -->
+            <div id="alerts" class="tab-content">
+                <h2>Critical Alerts</h2>
+                <p>Loading alerts...</p>
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ====================================================================
+         FOOTER
+         ==================================================================== -->
+    <footer style="text-align: center; padding: var(--spacing-lg); color: var(--color-text-muted); font-size: 12px; border-top: 1px solid #e2e8f0; margin-top: var(--spacing-2xl);">
+        <p>Last updated: <span id="lastUpdate">Just now</span> | Auto-refresh: Every 5 min</p>
+        <p>Agentic-Eco-Sentinel Dashboard v1.0.0 | Intelligent Predictive Maintenance Platform</p>
+    </footer>
+
+    <!-- ====================================================================
+         JAVASCRIPT
+         ==================================================================== -->
+    <script>
+        // Configuration
+        const API_BASE = '/api';
+        const REFRESH_INTERVALS = {
+            kpi: 30000,       // 30 seconds
+            devices: 60000,   // 1 minute
+            alerts: 20000,    // 20 seconds
+            analytics: 300000 // 5 minutes
+        };
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('🚀 Agentic-Eco-Sentinel Dashboard initializing...');
+            updateLastRefreshTime();
+            
+            // Load initial data
+            await loadOverviewData();
+            
+            // Set up auto-refresh
+            setUpAutoRefresh();
+        });
+
+        // ===================================================================
+        // TAB SWITCHING
+        // ===================================================================
+        function switchTab(event, tabName) {
+            event.preventDefault();
+
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.currentTarget.classList.add('active');
+
+            // Load tab data
+            loadTabData(tabName);
+        }
+
+        // ===================================================================
+        // DATA LOADING FUNCTIONS
+        // ===================================================================
+        async function loadTabData(tabName) {
+            console.log(`📂 Loading tab: ${tabName}`);
+
+            try {
+                switch (tabName) {
+                    case 'overview':
+                        await loadOverviewData();
+                        break;
+                    case 'devices':
+                        await loadDevicesData();
+                        break;
+                    case 'maintenance':
+                        await loadMaintenanceData();
+                        break;
+                    case 'analytics':
+                        await loadAnalyticsData();
+                        break;
+                    case 'alerts':
+                        await loadAlertsData();
+                        break;
+                }
+            } catch (error) {
+                console.error(`❌ Error loading ${tabName}:`, error);
+                document.getElementById(tabName).innerHTML = `
+                    <div class="card" style="border-left-color: var(--color-critical);">
+                        <div class="card-header">Error Loading Data</div>
+                        <p>Unable to load ${tabName} data. Please try again.</p>
+                        <button class="btn btn-primary" onclick="loadTabData('${tabName}')">🔄 Retry</button>
+                    </div>
+                `;
+            }
+        }
+
+        async function loadOverviewData() {
+            try {
+                const response = await fetch(`${API_BASE}/fleet-summary`);
+                const data = await response.json();
+                
+                const overview = document.getElementById('overview');
+                overview.innerHTML = `
+                    <h2>Fleet Dashboard Overview</h2>
+                    <div class="grid-2col" style="margin-top: var(--spacing-lg);">
+                        <div class="card">
+                            <div class="card-header">Fleet Health Gauge</div>
+                            <div class="chart-container">
+                                <canvas id="healthGauge"></canvas>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">Status Distribution</div>
+                            <div class="chart-container">
+                                <canvas id="statusChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">7-Day Trend</div>
+                            <div class="chart-container large">
+                                <canvas id="trendChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">Devices Requiring Attention</div>
+                            <div style="font-size: 12px;">
+                                <p><strong>3 Critical Issues</strong> detected</p>
+                                <p><strong>12 Warnings</strong> requiring attention</p>
+                                <p style="margin-top: var(--spacing-md);">
+                                    <button class="btn btn-primary btn-sm" onclick="switchTab({currentTarget: document.querySelector('[data-tab=alerts]')}, 'alerts')">
+                                        View All Alerts →
+                                    </button>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Initialize charts after content is loaded
+                setTimeout(() => {
+                    initializeCharts(data);
+                }, 100);
+
+            } catch (error) {
+                console.error('Error loading overview:', error);
+            }
+        }
+
+        async function loadDevicesData() {
+            const content = document.getElementById('devices');
+            content.innerHTML = `
+                <h2>Device Management</h2>
+                <p style="margin-top: var(--spacing-lg); color: var(--color-text-secondary);">
+                    Device tab content will be implemented in Phase 3
+                </p>
+            `;
+        }
+
+        async function loadMaintenanceData() {
+            const content = document.getElementById('maintenance');
+            content.innerHTML = `
+                <h2>Maintenance Operations</h2>
+                <p style="margin-top: var(--spacing-lg); color: var(--color-text-secondary);">
+                    Maintenance tab content will be implemented in Phase 4
+                </p>
+            `;
+        }
+
+        async function loadAnalyticsData() {
+            const content = document.getElementById('analytics');
+            content.innerHTML = `
+                <h2>Analytics & Insights</h2>
+                <p style="margin-top: var(--spacing-lg); color: var(--color-text-secondary);">
+                    Analytics tab content will be implemented in Phase 5
+                </p>
+            `;
+        }
+
+        async function loadAlertsData() {
+            const content = document.getElementById('alerts');
+            content.innerHTML = `
+                <h2>Critical Alerts</h2>
+                <p style="margin-top: var(--spacing-lg); color: var(--color-text-secondary);">
+                    Alerts tab content will be implemented in Phase 6
+                </p>
+            `;
+        }
+
+        // ===================================================================
+        // CHART INITIALIZATION
+        // ===================================================================
+        function initializeCharts(data) {
+            // Status Distribution Chart
+            const statusCtx = document.getElementById('statusChart')?.getContext('2d');
+            if (statusCtx) {
+                new Chart(statusCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Healthy', 'Warning', 'Critical', 'Pending'],
+                        datasets: [{
+                            data: [
+                                data.healthy_devices,
+                                data.warning_devices,
+                                data.critical_devices,
+                                data.pending_devices
+                            ],
+                            backgroundColor: [
+                                '#10b981', // Green
+                                '#f59e0b', // Amber
+                                '#dc2626', // Red
+                                '#9ca3af'  // Gray
+                            ],
+                            borderColor: 'white',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Trend Chart
+            const trendCtx = document.getElementById('trendChart')?.getContext('2d');
+            if (trendCtx) {
+                new Chart(trendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                        datasets: [{
+                            label: 'Fleet Health %',
+                            data: [85, 83, 86, 87, 88, 87, 87],
+                            borderColor: '#0d9488',
+                            backgroundColor: 'rgba(13, 148, 136, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true
+                            }
+                        },
+                        scales: {
+                            y: {
+                                min: 0,
+                                max: 100
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // ===================================================================
+        // UTILITY FUNCTIONS
+        // ===================================================================
+        function updateLastRefreshTime() {
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+        }
+
+        function refreshDashboard() {
+            console.log('🔄 Refreshing dashboard...');
+            updateLastRefreshTime();
+            const activeTab = document.querySelector('.tab-content.active').id;
+            loadTabData(activeTab);
+        }
+
+        function setUpAutoRefresh() {
+            setInterval(updateLastRefreshTime, 60000); // Update every minute
+        }
+
+        function openSettings() {
+            alert('⚙️ Settings panel coming soon!');
+        }
+    </script>
+</body>
+</html>
