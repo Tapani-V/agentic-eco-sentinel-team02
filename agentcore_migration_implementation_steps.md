@@ -250,6 +250,119 @@ sudo systemctl restart docker
 
 **Reference**: See [Docker & ECR Certificate Configuration](AGENTCORE_MIGRATION_PHASE2_SSL_CERTIFICATE_SOLUTION.md#docker--ecr-certificate-configuration) in SSL solution document
 
+### Step 3.2b: Complete Docker Build and Push Workflow
+
+**Use this section as reference for all Docker commands needed for Phase 3.**
+
+#### Prerequisites Check
+```bash
+# Verify Docker is running
+docker ps
+
+# Verify docker-compose is available
+docker compose version
+
+# Verify AWS CLI is available with SSO
+aws sts get-caller-identity --profile StandardAccess-450410489798
+```
+
+#### 1. Build Docker Images (Locally)
+```bash
+# Build all 3 images using docker-compose
+cd /home/skroy/AGENTIC_AI_POC_Phase3_1
+docker compose build
+
+# Or build individually:
+docker build -f Dockerfile.orchestrator -t agentic_ai_poc_phase3_1-orchestrator:latest .
+docker build -f Dockerfile.health_agent -t agentic_ai_poc_phase3_1-health-agent:latest .
+docker build -f Dockerfile.diagnosis_agent -t agentic_ai_poc_phase3_1-diagnosis-agent:latest .
+
+# Verify images built
+docker images | grep agentic
+```
+
+#### 2. Test Images Locally (Optional)
+```bash
+# Run local docker-compose to verify all 3 services work
+docker compose up -d
+
+# Check services are healthy
+docker compose ps
+docker compose logs orchestrator | head -20
+
+# Test S3 access from orchestrator
+docker compose exec orchestrator python3 << 'EOF'
+from src.utils.device_loader import DeviceLoader
+loader = DeviceLoader(bucket='agentic-ai-poc-synthetic-data')
+devices = loader.list_available_devices()
+print(f'✅ S3 Access: {len(devices)} devices found')
+EOF
+
+# Cleanup
+docker compose down
+```
+
+#### 3. Login to AWS ECR
+```bash
+# Get authentication token (requires AWS SSO credentials)
+AWS_PROFILE=StandardAccess-450410489798 aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin 450410489798.dkr.ecr.us-east-1.amazonaws.com
+
+# Expected output: "Login Succeeded"
+```
+
+#### 4. Tag Images for ECR
+```bash
+# Tag each image with ECR repository URI
+docker tag agentic_ai_poc_phase3_1-orchestrator:latest \
+  450410489798.dkr.ecr.us-east-1.amazonaws.com/orchestrator:latest
+
+docker tag agentic_ai_poc_phase3_1-health-agent:latest \
+  450410489798.dkr.ecr.us-east-1.amazonaws.com/health-agent:latest
+
+docker tag agentic_ai_poc_phase3_1-diagnosis-agent:latest \
+  450410489798.dkr.ecr.us-east-1.amazonaws.com/diagnosis-agent:latest
+
+# Verify tags
+docker images | grep 450410489798
+```
+
+#### 5. Push Images to ECR
+```bash
+# Push each image (this may take 2-5 minutes per image)
+echo "Pushing Orchestrator..."
+docker push 450410489798.dkr.ecr.us-east-1.amazonaws.com/orchestrator:latest
+
+echo "Pushing Health Agent..."
+docker push 450410489798.dkr.ecr.us-east-1.amazonaws.com/health-agent:latest
+
+echo "Pushing Diagnosis Agent..."
+docker push 450410489798.dkr.ecr.us-east-1.amazonaws.com/diagnosis-agent:latest
+
+# Verify push succeeded (look for green checkmark)
+aws ecr describe-images --repository-name orchestrator --region us-east-1 --profile StandardAccess-450410489798
+aws ecr describe-images --repository-name health-agent --region us-east-1 --profile StandardAccess-450410489798
+aws ecr describe-images --repository-name diagnosis-agent --region us-east-1 --profile StandardAccess-450410489798
+```
+
+#### 6. Verify Images in ECR Console
+```bash
+# List all images across repositories
+aws ecr describe-repositories --region us-east-1 --profile StandardAccess-450410489798 \
+  --query 'repositories[*].repositoryUri' --output table
+
+# Check image layers and size
+aws ecr describe-images --repository-name orchestrator --region us-east-1 \
+  --profile StandardAccess-450410489798 --output table
+```
+
+**Troubleshooting**:
+- ❌ "certificate signed by unknown authority" → See Step 3.2 (Docker CA certificate setup)
+- ❌ "image not found" → Verify image exists: `docker images | grep agentic`
+- ❌ "unauthorized" → Re-login to ECR: `aws ecr get-login-password ... | docker login`
+
+---
+
 ### Step 3.3: Authenticate Docker to ECR ✅
 
 ```bash
