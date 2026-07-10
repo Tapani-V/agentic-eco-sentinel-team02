@@ -376,17 +376,31 @@
             box-shadow: var(--shadow-sm);
             border-left: 4px solid var(--border-light);
             transition: all 0.2s ease;
+            border-radius: 12px;
         }
 
         .alert-item.critical { 
-            border-left-color: #c62828; 
-            background: #fce4e4;
-            color: #5d2626;
+            border-left-color: #2962cc;
+            background: linear-gradient(135deg, #2962cc 0%, #1a3a70 100%);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(41, 98, 204, 0.15);
         }
+
+        .alert-item.critical:hover {
+            box-shadow: 0 6px 20px rgba(41, 98, 204, 0.25);
+            transform: translateY(-2px);
+        }
+
         .alert-item.high { 
-            border-left-color: #f57c00; 
-            background: #fff3e0;
-            color: #6d4c41;
+            border-left-color: #0097a7;
+            background: linear-gradient(135deg, #0097a7 0%, #00838f 100%);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(0, 151, 167, 0.15);
+        }
+
+        .alert-item.high:hover {
+            box-shadow: 0 6px 20px rgba(0, 151, 167, 0.25);
+            transform: translateY(-2px);
         }
 
         .alert-header {
@@ -394,44 +408,54 @@
             justify-content: space-between;
             align-items: flex-start;
             margin-bottom: 8px;
+            gap: 12px;
         }
 
         .alert-title {
             font-weight: 700;
             color: inherit;
+            font-size: 1.05em;
         }
 
         .alert-badge {
-            padding: 4px 8px;
-            border-radius: 6px;
+            padding: 6px 12px;
+            border-radius: 8px;
             font-size: 0.75em;
             font-weight: 700;
             text-transform: uppercase;
             flex-shrink: 0;
-            margin-left: 8px;
+            letter-spacing: 0.5px;
+            background: rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.4);
         }
 
         .alert-badge.critical {
-            background: #c62828;
+            background: rgba(255, 255, 255, 0.25);
             color: white;
+            border: 1px solid rgba(255, 255, 255, 0.4);
         }
 
         .alert-badge.high {
-            background: #f57c00;
+            background: rgba(255, 255, 255, 0.25);
             color: white;
+            border: 1px solid rgba(255, 255, 255, 0.4);
         }
 
         .alert-description {
             color: inherit;
-            font-size: 0.9em;
-            margin-bottom: 8px;
+            font-size: 0.95em;
+            margin-bottom: 10px;
             font-weight: 500;
+            line-height: 1.4;
+            opacity: 0.95;
         }
 
         .alert-timestamp {
             color: inherit;
-            opacity: 0.85;
+            opacity: 0.8;
             font-size: 0.85em;
+            font-weight: 500;
         }
 
         /* ==================== FOOTER ==================== */

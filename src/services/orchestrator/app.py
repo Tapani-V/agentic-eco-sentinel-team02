@@ -14,6 +14,16 @@ This matches the agent pattern:
 └── Wrappers: src/services/health_agent/app.py, src/services/diagnosis_agent/app.py
 """
 
+# Load environment variables from .agentcore.env (local development)
+# In AWS AgentCore Runtime, .agentcore.env won't exist and this will be skipped
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+env_file = Path(__file__).parent.parent.parent / '.agentcore.env'
+if env_file.exists():
+    load_dotenv(env_file)
+
 import logging
 import time
 from datetime import datetime
@@ -91,7 +101,22 @@ workflow = OrchestrationWorkflow(
 )
 
 # Initialize device loader for real device data
-device_loader = DeviceLoader(data_dir="data/generated")
+# Phase 2: Reads from S3 if SYNTHETIC_DATA_BUCKET is set, otherwise uses local files
+# Configuration from .agentcore.env:
+#   AWS_PROFILE: AWS SSO profile name (required for S3 access)
+#   SYNTHETIC_DATA_BUCKET: S3 bucket name
+#   SYNTHETIC_DATA_PREFIX: S3 prefix (default: devices/)
+#   BOTO3_DISABLE_SSL_VERIFICATION: Set to 'true' for dev environments with SSL cert issues
+#   USE_LOCAL_DATA: Set to 'true' to force local file access (dev only)
+import os
+bucket = os.getenv("SYNTHETIC_DATA_BUCKET")
+prefix = os.getenv("SYNTHETIC_DATA_PREFIX", "devices/")
+device_loader = DeviceLoader(
+    data_dir="data/generated",
+    bucket=bucket,
+    prefix=prefix
+)
+logger.info(f"DeviceLoader initialized: S3 bucket={bucket}, profile={os.getenv('AWS_PROFILE')}")
 
 
 # ==================== FastAPI Endpoints ====================

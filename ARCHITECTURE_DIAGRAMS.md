@@ -417,3 +417,144 @@ Annual Cost: $9,000-36,500 (prevents $36,500+ in failures annually)
 **Architecture**: Validated with real devices and AWS integration  
 **LLM Optimization**: Only called when confidence < 0.85 (cost-effective)  
 **Performance**: Optimized for fast response and intelligent routing  
+
+---
+
+## Phase 2: S3 Integration for Synthetic Device Data
+
+### Data Flow (With S3 Integration - July 2026)
+
+**Architecture After Phase 1 & 2** (Local agents reading from S3):
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        DASHBOARD (Port 8080)                         │
+│                    Triggered by User Interaction                     │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                    GET /devices/{device_id}
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│               ORCHESTRATOR SERVICE (Port 8000)                       │
+│                                                                      │
+│  Step 1: Receive GET /devices/pump-001                              │
+│  ├─ DeviceLoader initialized                                        │
+│  └─ device_loader.get_device_status("pump-001")                     │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                    DEVICE LOADER (PHASE 2)                           │
+│                                                                      │
+│  Step 2: Load Device Data from S3                                   │
+│  ├─ boto3.client('s3')                                              │
+│  ├─ get_object(                                                     │
+│  │   Bucket='agentic-ai-poc-synthetic-data',                        │
+│  │   Key='devices/pump-001.json'                                    │
+│  │ )                                                                │
+│  └─ Parse JSON → Return device_status                              │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │
+                                ▼
+        ┌───────────────────────────────────────────────────┐
+        │     S3 BUCKET: agentic-ai-poc-synthetic-data     │
+        │                                                   │
+        │  ├── devices/                                     │
+        │  │   ├── compressor-001.json                     │
+        │  │   ├── compressor-002.json                     │
+        │  │   ├── generator-001.json                      │
+        │  │   ├── motor-001.json                          │
+        │  │   ├── motor-002.json                          │
+        │  │   └── pump-001.json ← LOADED                  │
+        │  │       {                                        │
+        │  │         "device_id": "pump-001",              │
+        │  │         "readings": {                          │
+        │  │           "temperature": {...},               │
+        │  │           "vibration": {...},                 │
+        │  │           "pressure": {...}                   │
+        │  │         }                                      │
+        │  │       }                                        │
+        │  └── (17 device files total)                     │
+        └───────────────────────────────────────────────────┘
+                                │
+                    Device data returned to Orchestrator
+                                │
+                                ▼
+        Device data flows through agents as before
+        (HealthAgent → DiagnosisAgent → MCP tools)
+```
+
+### Key Changes in Phase 2
+
+| Component | Before Phase 2 | After Phase 2 |
+|-----------|------------------|------------------|
+| **Data Source** | Local: `data/generated/*.json` | Cloud: S3 bucket |
+| **DeviceLoader.data_dir** | `"data/generated"` | S3 with boto3 client |
+| **Env Variable** | None | `SYNTHETIC_DATA_BUCKET` |
+| **Agents** | Unchanged | Unchanged |
+| **API Endpoints** | Same | Same |
+| **Performance** | Instant (local) | ~50-100ms (S3 latency) |
+| **Scalability** | Limited (local disk) | Unlimited (S3) |
+
+### Why Phase 2 Matters for AgentCore Migration
+
+**Local Development (After Phase 2)**:
+- ✅ Test S3 integration locally before AWS deployment
+- ✅ Verify agents can authenticate and read from S3
+- ✅ Catch any bugs in local environment (easier debugging)
+- ✅ Confirm DeviceLoader works correctly with boto3
+
+**Future AWS Deployment (Phase 3+)**:
+- ✅ Agents move to AgentCore Runtime (same code, same S3 access)
+- ✅ No changes needed to agent logic
+- ✅ Data already in cloud (migration simplified)
+- ✅ Only infrastructure changes (Docker → AgentCore)
+
+### S3 Integration Details
+
+**DeviceLoader Implementation**:
+```python
+class DeviceLoader:
+    def __init__(self, bucket: str, prefix: str = 'devices/'):
+        self.s3_client = boto3.client('s3')
+        self.bucket = bucket
+        self.prefix = prefix
+    
+    def load_device_history(self, device_id: str):
+        # Calls s3_client.get_object()
+        # Returns device data from: s3://bucket/devices/device-id.json
+        
+    def get_device_status(self, device_id: str):
+        # Used by Orchestrator endpoints
+        # Loads from S3 automatically
+```
+
+**Environment Variables**:
+```bash
+SYNTHETIC_DATA_BUCKET=agentic-ai-poc-synthetic-data
+SYNTHETIC_DATA_PREFIX=devices/
+```
+
+**Authentication**:
+- Uses AWS SSO profile (configured via .agentcore.env)
+- No static credentials needed (IAM role-based)
+
+### Data Flow Comparison
+
+```
+BEFORE (Phase 1):                AFTER (Phase 2):
+Local File System                S3 Storage
+
+Dashboard                        Dashboard
+   ↓                                ↓
+Orchestrator                     Orchestrator
+   ↓                                ↓
+DeviceLoader                     DeviceLoader
+   ├─ data/generated/               ├─ boto3.client('s3')
+   └─ Read from disk                └─ S3 get_object()
+                                       ↓
+                                    S3 Bucket
+```
+
+---
