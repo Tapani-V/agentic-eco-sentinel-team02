@@ -12,6 +12,8 @@ services:
       - LOG_LEVEL=INFO
     env_file:
       - .agentcore.env
+    volumes:
+      - ~/.aws:/root/.aws:ro
     networks:
       - agent-network
     healthcheck:
@@ -39,6 +41,8 @@ services:
       - LOG_LEVEL=INFO
     env_file:
       - .agentcore.env
+    volumes:
+      - ~/.aws:/root/.aws:ro
     networks:
       - agent-network
     depends_on:
@@ -71,6 +75,8 @@ services:
       - DIAGNOSIS_AGENT_URL=http://diagnosis-agent:8002
     env_file:
       - .agentcore.env
+    volumes:
+      - ~/.aws:/root/.aws:ro
     networks:
       - agent-network
     depends_on:
