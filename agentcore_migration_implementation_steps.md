@@ -219,60 +219,77 @@ DIAGNOSIS_AGENT_ENDPOINT=<will be assigned by AgentCore>
 
 ---
 
-## Phase 3: Push Docker Images to AWS ECR
+## Phase 3: Push Docker Images to AWS ECR ✅ (COMPLETED)
 
-### Step 3.1: Create ECR Repositories
+### Step 3.1: Create ECR Repositories ✅
 
-**What**: AWS ECR (Elastic Container Registry) stores Docker images
+**Status**: Repositories created
+- `orchestrator` ✅
+- `health-agent` ✅
+- `diagnosis-agent` ✅
 
-**Create 3 repositories**:
-1. `agentic-health-agent`
-2. `agentic-diagnosis-agent`
-3. `agentic-orchestrator`
+### Step 3.2: Configure Docker for Corporate Proxy SSL ✅
 
-**Commands**:
+**Problem**: Docker daemon behind corporate firewall cannot verify ECR TLS certificates
+
+**Solution**: Configure Docker daemon to trust certificate bundle
+
 ```bash
-aws ecr create-repository \
-  --repository-name agentic-health-agent \
-  --region us-east-1 \
-  --profile <your-sso-profile>
+# 1. Create Docker CA directory for ECR registry
+sudo mkdir -p /etc/docker/certs.d/450410489798.dkr.ecr.us-east-1.amazonaws.com
+
+# 2. Copy certificate bundle to Docker's CA directory
+sudo cp config/minimal_certificate_bundle.pem \
+  /etc/docker/certs.d/450410489798.dkr.ecr.us-east-1.amazonaws.com/ca.crt
+
+# 3. Restart Docker daemon
+sudo systemctl restart docker
 ```
 
-**Steps**:
-1. For each agent, create ECR repository
-2. Enable image scanning on push (detects vulnerabilities)
-3. Note the ECR URI for later: `<account-id>.dkr.ecr.us-east-1.amazonaws.com/agentic-health-agent`
+**Why**: Docker daemon (not just apps) needs to trust proxy certificates when pushing to ECR over HTTPS.
 
----
+**Reference**: See [Docker & ECR Certificate Configuration](AGENTCORE_MIGRATION_PHASE2_SSL_CERTIFICATE_SOLUTION.md#docker--ecr-certificate-configuration) in SSL solution document
 
-### Step 3.2: Build and Push Images
+### Step 3.3: Authenticate Docker to ECR ✅
 
-**What**: Create Docker images and upload to ECR
+```bash
+# Use AWS SSO profile for authentication
+aws ecr get-login-password --region us-east-1 --profile StandardAccess-450410489798 | \
+  docker login --username AWS --password-stdin 450410489798.dkr.ecr.us-east-1.amazonaws.com
+```
 
-**Steps**:
-1. Authenticate Docker to ECR:
-   ```bash
-   aws ecr get-login-password --region us-east-1 --profile <your-sso-profile> | \
-   docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
-   ```
+**Result**: `Login Succeeded` message confirms Docker can now access ECR
 
-2. Build each image:
-   ```bash
-   docker build -f Dockerfile.health_agent \
-     -t <account-id>.dkr.ecr.us-east-1.amazonaws.com/agentic-health-agent:v1.0 .
-   ```
+### Step 3.4: Tag Docker Images for ECR ✅
 
-3. Push to ECR:
-   ```bash
-   docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/agentic-health-agent:v1.0
-   ```
+```bash
+# Orchestrator
+docker tag agentic_ai_poc_phase3_1-orchestrator:latest \
+  450410489798.dkr.ecr.us-east-1.amazonaws.com/orchestrator:latest
 
-4. Verify in ECR console - images appear with green checkmark (scan passed)
+# Health Agent
+docker tag agentic_ai_poc_phase3_1-health-agent:latest \
+  450410489798.dkr.ecr.us-east-1.amazonaws.com/health-agent:latest
 
-**Why this approach**:
-- ECR integrates with AgentCore
-- Images are versioned (v1.0, v1.1, etc.) for rollback
-- Scanning catches security issues early
+# Diagnosis Agent
+docker tag agentic_ai_poc_phase3_1-diagnosis-agent:latest \
+  450410489798.dkr.ecr.us-east-1.amazonaws.com/diagnosis-agent:latest
+```
+
+### Step 3.5: Push Images to ECR ✅
+
+```bash
+# Push Orchestrator
+docker push 450410489798.dkr.ecr.us-east-1.amazonaws.com/orchestrator:latest
+
+# Push Health Agent
+docker push 450410489798.dkr.ecr.us-east-1.amazonaws.com/health-agent:latest
+
+# Push Diagnosis Agent
+docker push 450410489798.dkr.ecr.us-east-1.amazonaws.com/diagnosis-agent:latest
+```
+
+**Verify**: Check AWS ECR console → see 3 images with green checkmark (scan passed)
 
 ---
 
@@ -289,7 +306,7 @@ aws ecr create-repository \
   "agentName": "HealthAgent",
   "version": "1.0",
   "description": "Equipment health analysis agent",
-  "containerImage": "<account-id>.dkr.ecr.us-east-1.amazonaws.com/agentic-health-agent:v1.0",
+  "containerImage": "450410489798.dkr.ecr.us-east-1.amazonaws.com/health-agent:latest",
   "resources": {
     "cpu": 256,      // 0.25 vCPU
     "memory": 512,   // 512 MB

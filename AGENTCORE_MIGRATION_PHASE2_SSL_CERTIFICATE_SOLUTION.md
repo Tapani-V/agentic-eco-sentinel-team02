@@ -306,6 +306,55 @@ print('S3 client created successfully')
 
 ---
 
+## Docker & ECR Certificate Configuration
+
+### Problem: Docker Push to ECR Fails with SSL Error
+
+When pushing Docker images to ECR behind corporate proxy:
+```
+docker push 450410489798.dkr.ecr.us-east-1.amazonaws.com/orchestrator:latest
+Error: tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+**Root Cause:** Docker daemon doesn't trust corporate proxy certificates.
+
+### Solution: Add Certificate to Docker's CA Store
+
+```bash
+# 1. Create ECR registry directory
+sudo mkdir -p /etc/docker/certs.d/450410489798.dkr.ecr.us-east-1.amazonaws.com
+
+# 2. Copy certificate bundle to Docker's CA directory
+sudo cp config/minimal_certificate_bundle.pem \
+  /etc/docker/certs.d/450410489798.dkr.ecr.us-east-1.amazonaws.com/ca.crt
+
+# 3. Restart Docker daemon
+sudo systemctl restart docker
+
+# 4. Now ECR login and push will work
+aws ecr get-login-password --region us-east-1 --profile StandardAccess-450410489798 | \
+  docker login --username AWS --password-stdin 450410489798.dkr.ecr.us-east-1.amazonaws.com
+
+# 5. Push Docker image to ECR
+docker push 450410489798.dkr.ecr.us-east-1.amazonaws.com/orchestrator:latest
+```
+
+### Why This Works
+
+- Docker daemon reads CA certificates from `/etc/docker/certs.d/{registry}/`
+- Our certificate bundle contains complete Capgemini chain
+- Docker verifies ECR TLS handshake using the trusted certificates
+- Same single certificate bundle handles both boto3 (app) and docker (daemon)
+
+### Important Notes
+
+- **Certificate path format**: `/etc/docker/certs.d/{ECR_REGISTRY_URI}/ca.crt` (must be named `ca.crt`)
+- **Persistence**: Docker certificate configuration persists across restarts (stored on disk)
+- **Alternative**: Can also update system CA store with `sudo update-ca-certificates`, but Docker-specific path is cleaner
+- **Multiple registries**: If pushing to multiple ECR registries, create separate directories for each
+
+---
+
 ## Security Checklist ✅
 
 - ✅ SSL verification **enabled** (not disabled)
@@ -314,6 +363,7 @@ print('S3 client created successfully')
 - ✅ No credentials stored in certificate files
 - ✅ Credentials use AWS SSO (no static keys)
 - ✅ Production-grade security maintained
+- ✅ Docker daemon properly configured for TLS verification
 
 ---
 
