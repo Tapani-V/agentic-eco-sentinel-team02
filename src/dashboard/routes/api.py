@@ -114,29 +114,38 @@ class OrchestratorClient:
         self.timeout = timeout
         self.logger = logging.getLogger('ORCHESTRATOR_CLIENT')
     
-    async def get(self, endpoint: str, **kwargs) -> Optional[Dict[str, Any]]:
-        """Make GET request to orchestrator"""
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                url = f"{self.base_url}{endpoint}"
-                self.logger.debug(f"🔗 GET {endpoint}")
-                response = await client.get(url, **kwargs)
-                
-                if response.status_code == 200:
-                    self.logger.debug(f"✅ {endpoint} - 200 OK")
-                    return response.json()
-                else:
-                    self.logger.error(f"❌ {endpoint} - {response.status_code}")
-                    return None
-        except httpx.ConnectError:
-            self.logger.error(f"🚫 Cannot connect to orchestrator: {self.base_url}")
-            return None
-        except httpx.TimeoutException:
-            self.logger.error(f"⏱️  Timeout calling {endpoint}")
-            return None
-        except Exception as e:
-            self.logger.error(f"❌ Error calling {endpoint}: {str(e)}")
-            return None
+    async def get(self, endpoint: str, retries: int = 2, **kwargs) -> Optional[Dict[str, Any]]:
+        """Make GET request to orchestrator, retrying transient connection/timeout errors"""
+        last_error = None
+        for attempt in range(retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    url = f"{self.base_url}{endpoint}"
+                    self.logger.debug(f"🔗 GET {endpoint} (attempt {attempt + 1}/{retries + 1})")
+                    response = await client.get(url, **kwargs)
+                    
+                    if response.status_code == 200:
+                        self.logger.debug(f"✅ {endpoint} - 200 OK")
+                        return response.json()
+                    else:
+                        self.logger.error(f"❌ {endpoint} - {response.status_code}")
+                        return None
+            except httpx.ConnectError:
+                last_error = 'connect'
+            except httpx.TimeoutException:
+                last_error = 'timeout'
+            except Exception as e:
+                self.logger.error(f"❌ Error calling {endpoint}: {str(e)}")
+                return None
+            
+            if attempt < retries:
+                await asyncio.sleep(0.5 * (attempt + 1))  # 0.5s, 1s backoff
+        
+        if last_error == 'connect':
+            self.logger.error(f"🚫 Cannot connect to orchestrator: {self.base_url} (after {retries + 1} attempts)")
+        elif last_error == 'timeout':
+            self.logger.error(f"⏱️  Timeout calling {endpoint} (after {retries + 1} attempts)")
+        return None
     
     async def post(self, endpoint: str, data: Dict[str, Any], **kwargs) -> Optional[Dict[str, Any]]:
         """Make POST request to orchestrator"""
@@ -586,6 +595,7 @@ async def fleet_summary():
         
         # Calculate metrics
         total = len(device_ids)
+        responded = len(health_statuses)
         healthy = sum(1 for status in health_statuses.values() if status == 'healthy')
         warning = sum(1 for status in health_statuses.values() if status == 'warning')
         critical = sum(1 for status in health_statuses.values() if status == 'critical')
@@ -594,12 +604,13 @@ async def fleet_summary():
         avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
         avg_degradation = 1 - avg_confidence
         
-        # If some devices didn't respond, log it
-        responded = len(health_statuses)
+        # If some devices didn't respond, log it. Percentage is based on devices
+        # that actually responded, not the full fleet count - otherwise transient
+        # per-device fetch failures make fleet health look artificially low.
         if responded < total:
             logger.warning(f"⚠️  Only {responded}/{total} devices responded ({total - responded} timeouts)")
         
-        health_percent = round((healthy / total * 100)) if total > 0 else 0
+        health_percent = round((healthy / responded * 100)) if responded > 0 else 0
         
         logger.info(f"✅ Fleet: {healthy}/{total} healthy, {warning} warning, {critical} critical")
         logger.info(f"📋 Work Orders: {len(all_work_orders)} | Maintenance: {len(all_maintenance_schedules)} | Spare Parts: {len(all_spare_parts)}")
@@ -826,13 +837,17 @@ async def hard_refresh_cache():
                         all_spare_parts[part_id] = part
         
         total = len(device_ids)
+        responded = len(health_statuses)
         healthy = sum(1 for status in health_statuses.values() if status == 'healthy')
         warning = sum(1 for status in health_statuses.values() if status == 'warning')
         critical = sum(1 for status in health_statuses.values() if status == 'critical')
         
+        if responded < total:
+            logger.warning(f"⚠️  Only {responded}/{total} devices responded ({total - responded} timeouts)")
+        
         avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
         avg_degradation = 1 - avg_confidence
-        health_percent = round((healthy / total * 100)) if total > 0 else 0
+        health_percent = round((healthy / responded * 100)) if responded > 0 else 0
         
         result = {
             "timestamp": datetime.now().isoformat(),
