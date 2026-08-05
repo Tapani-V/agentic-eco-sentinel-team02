@@ -14,12 +14,17 @@ COPY src/ ./src/
 COPY data/ ./data/
 COPY config/ ./config/
 
-# Expose port
-EXPOSE 8000
+# Copy the AgentCore entry point script
+COPY agentcore_entrypoint.py .
 
-# Health check
+# AgentCore Runtime requires the container to serve HTTP on port 8080
+# (POST /invocations, GET /ping) - see bedrock_agentcore.runtime.BedrockAgentCoreApp
+EXPOSE 8080
+
+# Health check against the AgentCore Runtime /ping endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8080/ping || exit 1
 
-# Run Orchestrator service
-CMD ["python", "-m", "uvicorn", "src.services.orchestrator.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# AgentCore Runtime entry point
+# Invokes the handler module that AgentCore Runtime sends payloads to
+CMD ["python", "agentcore_entrypoint.py", "src.services.orchestrator.handler", "--port", "8080"]

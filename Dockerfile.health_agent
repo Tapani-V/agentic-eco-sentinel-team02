@@ -13,12 +13,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY config/ ./config/
 
-# Expose port
-EXPOSE 8001
+# Copy the AgentCore entry point script
+COPY agentcore_entrypoint.py .
 
-# Health check
+# AgentCore Runtime requires the container to serve HTTP on port 8080
+# (POST /invocations, GET /ping) - see bedrock_agentcore.runtime.BedrockAgentCoreApp
+EXPOSE 8080
+
+# Health check against the AgentCore Runtime /ping endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:8001/health || exit 1
+    CMD curl -f http://localhost:8080/ping || exit 1
 
-# Run HealthAgent service
-CMD ["python", "-m", "uvicorn", "src.services.health_agent.app:app", "--host", "0.0.0.0", "--port", "8001"]
+# AgentCore Runtime entry point
+# Invokes the handler module that AgentCore Runtime sends payloads to
+CMD ["python", "agentcore_entrypoint.py", "src.services.health_agent.handler", "--port", "8080"]

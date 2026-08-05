@@ -46,7 +46,8 @@ class Settings(BaseSettings):
     # ========================================
     # Orchestrator Service Connection
     # ========================================
-    ORCHESTRATOR_URL: str = os.getenv("ORCHESTRATOR_URL", "http://localhost:8000")
+    # Points to API Gateway endpoint which proxies to Lambda -> Orchestrator
+    ORCHESTRATOR_URL: str = os.getenv("ORCHESTRATOR_URL", "https://mn6y8y0u26.execute-api.us-east-1.amazonaws.com/prod/orchestrate")
     ORCHESTRATOR_TIMEOUT: int = int(os.getenv("ORCHESTRATOR_TIMEOUT", "30"))
     
     # ========================================

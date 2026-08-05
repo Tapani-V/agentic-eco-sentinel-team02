@@ -114,8 +114,10 @@ app.include_router(api.router, prefix="/api", tags=["api"])
 async def root(request: Request):
     """Serve main dashboard page with version and metadata"""
     logger.info("📊 Dashboard page requested")
-    return templates.TemplateResponse("index.html", {
-        "request": request,
+    # Newer Starlette requires `request` as the first positional argument
+    # (TemplateResponse(request, name, context)), not the legacy
+    # TemplateResponse(name, {"request": request, ...}) calling convention.
+    return templates.TemplateResponse(request, "index.html", {
         "app_version": settings.APP_VERSION,
         "app_name": settings.APP_NAME,
     })

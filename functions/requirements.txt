@@ -1,0 +1,13 @@
+# Lambda Handler Dependencies
+# Using modern standard AWS SDK (boto3) to invoke agents on AgentCore Runtime
+
+# AWS SDK - standard tool for all AWS API calls
+# Version 1.34+ includes bedrock-agentcore-runtime client
+boto3>=1.34.0
+
+# Standard library alternatives (built-in, included for clarity)
+# json - for JSON parsing
+# os - for environment variables
+# logging - for logging
+# base64 - for Base64 encoding
+# datetime - for timestamps

@@ -164,6 +164,12 @@ class BedrockAgentDeployer:
                 'AZURE_OPENAI_DEPLOYMENT': self.azure_openai_deployment or '',
                 'AZURE_OPENAI_API_VERSION': self.azure_openai_api_version or '',
                 
+                # Synthetic device data (S3) - used by orchestrator's DeviceLoader
+                # for list_devices / get_device / get_device_summary actions
+                'SYNTHETIC_DATA_BUCKET': 'agentic-ai-poc-synthetic-data',
+                'SYNTHETIC_DATA_PREFIX': 'devices/',
+                'AWS_REGION': self.region,
+                
                 # Logging
                 'LOG_LEVEL': 'INFO',
                 'PYTHONUNBUFFERED': '1'
