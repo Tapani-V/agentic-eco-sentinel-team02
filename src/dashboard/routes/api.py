@@ -20,6 +20,7 @@ Data Flow:
 
 import logging
 import httpx
+import ssl
 import asyncio
 from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, List, Optional
@@ -134,6 +135,11 @@ class OrchestratorClient:
                 last_error = 'connect'
             except httpx.TimeoutException:
                 last_error = 'timeout'
+            except ssl.SSLError:
+                # Observed intermittently (self-resolving TLS handshake
+                # failures) - retry like a transient connect error instead
+                # of permanently skipping this device for the cache TTL.
+                last_error = 'connect'
             except Exception as e:
                 self.logger.error(f"❌ Error calling {endpoint}: {str(e)}")
                 return None
@@ -548,6 +554,7 @@ async def fleet_summary():
         all_work_orders = []
         all_maintenance_schedules = []
         all_spare_parts = {}  # Deduplicated by part_id
+        all_devices = []  # Full per-device summaries, for /devices to reuse
         
         for device_id in device_ids:
             device_data = await orchestrator.get(f"/devices/{device_id}")
@@ -559,6 +566,19 @@ async def fleet_summary():
                 
                 equipment_type = device_id.split('-')[0].upper()
                 equipment_counts[equipment_type] = equipment_counts.get(equipment_type, 0) + 1
+                
+                all_devices.append({
+                    "device_id": device_id,
+                    "equipment_type": equipment_type,
+                    "health_status": status,
+                    # NOTE: holds raw confidence, not actual degradation - matches
+                    # the shape list_devices()'s own fetch loop produces, since
+                    # both are passed through the same filter/format code below,
+                    # which inverts this into a real degradation_score.
+                    "degradation_score": confidence,
+                    "timestamp": device_data.get('timestamp', ''),
+                    "diagnosis": device_data.get('diagnosis', ''),
+                })
                 
                 # Store details for critical and warning devices
                 if status in ['critical', 'warning']:
@@ -631,6 +651,13 @@ async def fleet_summary():
             "fleet_health_percent": health_percent,
             "degradation_trend": "stable",
             "_problematic_devices": sorted_problematic,  # All problematic devices
+            # Raw MCP result lists - consumed directly by /work-orders,
+            # /maintenance-schedule, /spare-parts (via data_cache.get()) so
+            # they don't each independently re-fetch all devices.
+            "work_orders": all_work_orders,
+            "maintenance_schedules": all_maintenance_schedules,
+            "spare_parts": list(all_spare_parts.values()),
+            "devices_list": all_devices,
             "_mcp_data": {
                 "work_orders": len(all_work_orders),
                 "maintenance_schedules": len(all_maintenance_schedules),
@@ -673,33 +700,48 @@ async def list_devices(
     """
     logger.info(f"📋 Devices list requested (skip={skip}, limit={limit})")
     
-    # Get device IDs from orchestrator
-    devices_list_data = await orchestrator.get("/devices")
-    
-    if not devices_list_data:
-        logger.error("Failed to fetch device list")
-        raise HTTPException(status_code=503, detail="Orchestrator unavailable")
-    
-    device_ids = devices_list_data.get('devices', [])
-    
-    # Fetch full device data for each device ID
-    devices = []
-    for device_id in device_ids:
-        device_data = await orchestrator.get(f"/devices/{device_id}")
-        if device_data:
-            # Extract equipment type from device_id (pump-001 → PUMP)
-            equipment_type_detected = device_id.split('-')[0].upper()
-            
-            devices.append({
-                "device_id": device_id,
-                "equipment_type": equipment_type_detected,
-                "health_status": device_data.get('health_status', 'unknown'),
-                "degradation_score": device_data.get('confidence', 0),  # Use confidence as degradation proxy
-                "timestamp": device_data.get('timestamp', ''),
-                "diagnosis": device_data.get('diagnosis', ''),
-            })
-    
-    logger.debug(f"✅ Fetched {len(devices)} full device records")
+    # Reuse fleet-summary's cache if available (avoids an independent,
+    # uncoordinated full-fleet re-scan on every /devices call).
+    cached = data_cache.get()
+    if cached and 'devices_list' in cached:
+        logger.debug("📦 Using cached devices list")
+        devices = list(cached['devices_list'])
+    else:
+        # Avoid starting a second full-fleet scan while /fleet-summary's is
+        # already in progress - wait for it instead.
+        if fetch_queue.is_fetching():
+            raise HTTPException(
+                status_code=503,
+                detail="Loading fleet data... Please wait and retry."
+            )
+        
+        # Get device IDs from orchestrator
+        devices_list_data = await orchestrator.get("/devices")
+        
+        if not devices_list_data:
+            logger.error("Failed to fetch device list")
+            raise HTTPException(status_code=503, detail="Orchestrator unavailable")
+        
+        device_ids = devices_list_data.get('devices', [])
+        
+        # Fetch full device data for each device ID
+        devices = []
+        for device_id in device_ids:
+            device_data = await orchestrator.get(f"/devices/{device_id}")
+            if device_data:
+                # Extract equipment type from device_id (pump-001 → PUMP)
+                equipment_type_detected = device_id.split('-')[0].upper()
+                
+                devices.append({
+                    "device_id": device_id,
+                    "equipment_type": equipment_type_detected,
+                    "health_status": device_data.get('health_status', 'unknown'),
+                    "degradation_score": device_data.get('confidence', 0),  # Use confidence as degradation proxy
+                    "timestamp": device_data.get('timestamp', ''),
+                    "diagnosis": device_data.get('diagnosis', ''),
+                })
+        
+        logger.debug(f"✅ Fetched {len(devices)} full device records")
     
     # Apply filters
     if equipment_type:
@@ -1052,6 +1094,15 @@ async def get_maintenance_schedules():
         # If no cache, fetch from orchestrator
         logger.debug("💾 No cache available, fetching fresh data...")
         
+        # Avoid starting a second full-fleet scan while /fleet-summary's is
+        # already in progress - wait for it instead (it populates this same
+        # cache with maintenance_schedules on completion).
+        if fetch_queue.is_fetching():
+            raise HTTPException(
+                status_code=503,
+                detail="Loading fleet data... Please wait and retry."
+            )
+        
         # Get all device IDs
         devices_list_data = await orchestrator.get("/devices")
         
@@ -1141,6 +1192,15 @@ async def get_work_orders(status: Optional[str] = Query(None)):
     else:
         # If no cache, fetch from orchestrator
         logger.debug("💾 No cache available, fetching fresh data...")
+        
+        # Avoid starting a second full-fleet scan while /fleet-summary's is
+        # already in progress - wait for it instead (it populates this same
+        # cache with work_orders on completion).
+        if fetch_queue.is_fetching():
+            raise HTTPException(
+                status_code=503,
+                detail="Loading fleet data... Please wait and retry."
+            )
         
         # Get all device IDs
         devices_list_data = await orchestrator.get("/devices")
@@ -1240,6 +1300,15 @@ async def get_spare_parts(availability: Optional[str] = Query(None)):
     else:
         # If no cache, fetch from orchestrator
         logger.debug("💾 No cache available, fetching fresh data...")
+        
+        # Avoid starting a second full-fleet scan while /fleet-summary's is
+        # already in progress - wait for it instead (it populates this same
+        # cache with spare_parts on completion).
+        if fetch_queue.is_fetching():
+            raise HTTPException(
+                status_code=503,
+                detail="Loading fleet data... Please wait and retry."
+            )
         
         # Get all device IDs
         devices_list_data = await orchestrator.get("/devices")
@@ -1341,6 +1410,15 @@ async def analytics_overview():
     
     # Fallback: fetch fresh data if cache not available
     logger.debug("⚠️  No cached analytics, fetching fresh data")
+    
+    # Avoid starting a second full-fleet scan while /fleet-summary's is
+    # already in progress - wait for it instead (it populates this same
+    # cache with _analytics on completion).
+    if fetch_queue.is_fetching():
+        raise HTTPException(
+            status_code=503,
+            detail="Loading fleet data... Please wait and retry."
+        )
     
     # Get all device IDs
     devices_list_data = await orchestrator.get("/devices")
