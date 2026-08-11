@@ -1,7 +1,7 @@
 # Phase 4: Bedrock AgentCore Runtime Deployment
 
 **Status:** ✅ Complete (deployed, tested end-to-end via dashboard)  
-**Date:** 2026-07-10 (initial) / 2026-07-24 (invocation protocol + agent logic fixes)  
+**Date:** 2026-07-10 (initial) / 2026-07-24 (invocation protocol + agent logic fixes) / 2026-08-11 (LangGraph orchestration reintroduced)  
 **Platform:** AWS Bedrock Agentic AI (AgentCore Runtime, Gateway, Memory)
 
 ---
@@ -212,6 +212,101 @@ does not.
 - `CMD [..., "--port", "8080"]` (same reason)
 - `HEALTHCHECK` changed to `curl -f http://localhost:8080/ping` (was a fake
   `python -c "print('ok')"` check that didn't verify anything real)
+
+---
+
+## Orchestration Workflow: LangGraph StateGraph (Reintroduced)
+
+**Status:** ✅ Complete (2026-08-11)
+
+The original local (docker-compose) orchestrator used a LangGraph
+`StateGraph` (`src/graph/workflow.py`) to sequence HealthAgent → router →
+DiagnosisAgent → aggregator, calling the other services over `httpx`. When
+the orchestrator was migrated to AgentCore Runtime, this was dropped in
+favor of a flat, hand-written sequential Python function
+(`_analyze_device()` calling a module-level `invoke_agent()` helper twice).
+The behavior was equivalent, but the LangGraph structure (explicit graph,
+conditional routing, per-node state typing) was lost.
+
+This has been reintroduced via `src/graph/workflow_agentcore.py`
+(`AgentCoreworkflow`), which was already written in an earlier iteration but
+never wired into `handler.py` (it was dead code). It is now the active
+orchestration engine.
+
+### Architecture
+
+```
+health_agent (Node 1) → router (Node 2) --[healthy]--> aggregator (Node 4) → END
+                                          --[else]----> diagnosis_agent (Node 3) → aggregator (Node 4) → END
+```
+
+- **Node 1 (`health_agent`):** Invokes `HEALTH_AGENT_RUNTIME_ID` via
+  `boto3.invoke_agent_runtime()`.
+- **Node 2 (`router`):** Pure state transition - if `health_status ==
+  'healthy'`, sets default "no action needed" fields and routes straight to
+  the aggregator (skips DiagnosisAgent entirely - cost optimization, matches
+  prior behavior). Otherwise routes to `diagnosis_agent`.
+- **Node 3 (`diagnosis_agent`):** Invokes `DIAGNOSIS_AGENT_RUNTIME_ID` via
+  `boto3.invoke_agent_runtime()`, only reached for non-healthy devices.
+- **Node 4 (`aggregator`):** Final pass-through (state already complete by
+  this point).
+
+The graph itself (`StateGraph(WorkflowState).compile()`) is unchanged from
+`workflow.py`'s conditional-edge pattern - only *how* nodes call the other
+agents differs (`boto3.invoke_agent_runtime()` instead of `httpx.post()` to
+docker-compose hostnames like `http://health-agent:8001`).
+
+### `src/services/orchestrator/handler.py` changes
+
+- Removed the module-level `invoke_agent()` function and the flat sequential
+  `_analyze_device()` implementation.
+- `_analyze_device()` is now `async`, builds a `WorkflowState`-shaped
+  `initial_state` dict, and calls `await workflow.run(initial_state)`
+  (`workflow` = a lazily-constructed, warm-container-cached
+  `AgentCoreworkflow` singleton via `_get_workflow()`).
+- `lambda_handler()` calls the now-async `_analyze_device()` via
+  `asyncio.run(...)` for the `analyze` and `get_device` actions. The
+  `list_devices`, `get_device_summary`, and `health` actions are unaffected
+  (no LangGraph involvement - they only read from `DeviceLoader`/S3).
+- The external response shape (`statusCode`/`body` with `health_status`,
+  `degradation_score`, `diagnosis`, `tool_results`, `mcp_tools_used`,
+  `path`, etc.) is unchanged - this was purely an internal orchestration
+  refactor.
+
+### Bugs found and fixed during reintroduction
+
+Since `workflow_agentcore.py` had never actually been exercised end-to-end
+before (it was dead code), wiring it in surfaced two latent bugs:
+
+1. **Response body not unwrapped.** `_invoke_agent()` returned the raw
+   `boto3.invoke_agent_runtime()` response JSON as-is, but every agent
+   handler returns a Lambda-style `{"statusCode": ..., "body": {...}}` shape
+   (per `agentcore_entrypoint.py`, which returns the handler's result
+   unmodified). The node methods (e.g. `_health_agent_node`) then tried to
+   read `result['health_status']` directly instead of
+   `result['body']['health_status']`, raising `KeyError: 'health_status'`.
+   **Fix:** `_invoke_agent()` now unwraps `result['body']` before returning
+   (and raises a `RuntimeError` if `statusCode >= 400`).
+2. **`runtimeSessionId` too short for DiagnosisAgent.** Session IDs must be
+   `>= 33` chars. The `f"diag-{device_id}-{timestamp}"` pattern was 2 chars
+   shorter than the `f"health-{device_id}-{timestamp}"` pattern (`"diag-"` vs
+   `"health-"`), producing IDs as short as 31 chars for short device IDs -
+   failing boto3 parameter validation. **Fix:** both node methods now use
+   `f"{prefix}-{device_id}-{uuid.uuid4().hex}"` (a fixed-length 32-char hex
+   suffix), guaranteeing `>= 33` chars regardless of `device_id` length.
+
+### Verification
+
+Confirmed via direct calls through the API Gateway (`GET
+/orchestrate/devices/{device_id}`) and CloudWatch logs
+(`/aws/bedrock-agentcore/runtimes/orchestrator_runtime-*`):
+- Healthy devices (e.g. `compressor-001`, `pump-001`) → `path: health_only`,
+  `agents_used: ["HealthAgent"]` only, log lines show `[NODE 1]` → `[NODE 2]`
+  → `[NODE 4]` (DiagnosisAgent node skipped).
+- Non-healthy devices (e.g. `motor-004`, `generator-001`) → `path:
+  full_diagnosis`, `agents_used: ["HealthAgent", "DiagnosisAgent"]`, log
+  lines show all 4 nodes in order, with a real MCP `create-work-order` call
+  reflected in `tool_results`/`mcp_tools_used`.
 
 ---
 
@@ -534,6 +629,29 @@ data was just being dropped during response aggregation.
 **Solution:** Forward `tool_results` as-is, and derive `mcp_tools_used` from
 `list(tool_results.keys())`.
 
+### DiagnosisAgent invocation fails with "Invalid length for parameter runtimeSessionId"
+
+**Root cause:** `AgentCoreworkflow._diagnosis_agent_node()` generated
+session IDs as `f"diag-{device_id}-{timestamp}"`, which for short
+`device_id`s came out under the required 33-character minimum for
+`runtimeSessionId`.
+
+**Solution:** Generate session IDs as
+`f"{prefix}-{device_id}-{uuid.uuid4().hex}"` - the 32-char hex UUID suffix
+guarantees the minimum length regardless of `device_id` length.
+
+### LangGraph node raises `KeyError: 'health_status'` (or similar) invoking another agent
+
+**Root cause:** Agent handlers return a Lambda-style `{"statusCode": ...,
+"body": {...}}` response (unwrapped by `agentcore_entrypoint.py`). Code that
+calls `boto3.invoke_agent_runtime()` and reads fields directly off the
+parsed response (instead of `response['body']`) will get a `KeyError` for
+any field that only exists inside `body`.
+
+**Solution:** Always unwrap `body` from `boto3.invoke_agent_runtime()`
+responses before reading fields (see
+`AgentCoreworkflow._invoke_agent()` in `src/graph/workflow_agentcore.py`).
+
 ---
 
 ## AWS Agentic AI Services
@@ -568,4 +686,6 @@ This deployment uses:
 5. ✅ Fix HealthAgent double-wrap and orchestrator tool_results forwarding bugs
 6. ✅ Test end-to-end workflow via dashboard (fleet summary, work orders,
    maintenance schedules, spare parts all confirmed showing real data)
-7. ⏳ Document AgentCore Gateway integration (Phase 5)
+7. ✅ Reintroduce LangGraph `StateGraph` orchestration (dropped during the
+   original AgentCore migration) via `src/graph/workflow_agentcore.py`
+8. ⏳ Document AgentCore Gateway integration (Phase 5)

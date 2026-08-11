@@ -6,6 +6,13 @@ substitute: the exact request/response JSON shape for every agent, based on
 the actual handler code, plus how to check which agents/MCP tools processed
 any given request.
 
+> **Internal orchestration note:** The request/response shapes below are
+> unchanged, but the orchestrator's internal HealthAgent → DiagnosisAgent
+> sequencing is now driven by a LangGraph `StateGraph`
+> (`src/graph/workflow_agentcore.py`) instead of a flat sequential function.
+> See "Orchestration Workflow: LangGraph StateGraph (Reintroduced)" in
+> `docs/PHASE_4_AGENTCORE_DEPLOYMENT.md` for details.
+
 ---
 
 ## Public HTTP entry point (via API Gateway + Lambda)

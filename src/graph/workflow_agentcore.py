@@ -2,10 +2,11 @@
 """
 Orchestration Workflow - AgentCore Compatible Version
 
-This is the AWS AgentCore Runtime compatible version of the workflow.
+This is the AWS AgentCore Runtime compatible version of the workflow, used by
+src/services/orchestrator/handler.py for the "analyze"/"get_device" actions.
 Instead of calling agents via HTTP, it uses boto3 to invoke them via bedrock-agentcore.
 
-Core differences from workflow.py:
+Core differences from workflow.py (the old local docker-compose version):
 - Uses boto3.client('bedrock-agentcore').invoke_agent_runtime() instead of httpx
 - Generates session IDs with required length (>= 33 chars)
 - Handles StreamingBody responses properly
@@ -13,6 +14,7 @@ Core differences from workflow.py:
 
 import logging
 import json
+import uuid
 import boto3
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -152,6 +154,16 @@ class AgentCoreworkflow:
             result = json.loads(response_body.decode('utf-8'))
             
             logger.info(f"  → {runtime_id} response received")
+            
+            # Agent handlers return Lambda-style {"statusCode": ..., "body": {...}}
+            # responses (see agentcore_entrypoint.py, which returns the handler's
+            # result as-is). Unwrap "body" to get the actual agent output.
+            if isinstance(result, dict) and 'body' in result:
+                if result.get('statusCode', 200) >= 400:
+                    error_body = result['body']
+                    raise RuntimeError(f"{runtime_id} returned error: {error_body}")
+                return result['body']
+            
             return result
             
         except Exception as e:
@@ -164,8 +176,9 @@ class AgentCoreworkflow:
             logger.info(f"[NODE 1] HealthAgent: Analyzing {state['device_id']}")
             state['agents_used'].append('HealthAgent')
             
-            # Generate session ID (>= 33 chars)
-            session_id = f"health-{state['device_id']}-{int(datetime.now().timestamp() * 1000000)}"
+            # Session ID must be >= 33 chars regardless of device_id length -
+            # pad with a uuid4 hex suffix to guarantee this.
+            session_id = f"health-{state['device_id']}-{uuid.uuid4().hex}"
             
             result = self._invoke_agent(
                 self.health_agent_runtime_id,
@@ -215,8 +228,9 @@ class AgentCoreworkflow:
             logger.info(f"[NODE 3] DiagnosisAgent: Diagnosing {state['device_id']}")
             state['agents_used'].append('DiagnosisAgent')
             
-            # Generate session ID (>= 33 chars)
-            session_id = f"diag-{state['device_id']}-{int(datetime.now().timestamp() * 1000000)}"
+            # Session ID must be >= 33 chars regardless of device_id length -
+            # pad with a uuid4 hex suffix to guarantee this.
+            session_id = f"diagnosis-{state['device_id']}-{uuid.uuid4().hex}"
             
             result = self._invoke_agent(
                 self.diagnosis_agent_runtime_id,
@@ -244,9 +258,10 @@ class AgentCoreworkflow:
             state['predicted_failure_date'] = result.get('predicted_failure_date')
             state['recommendation_details'] = result.get('recommendation_details', '')
             
-            # Track MCP tools used
-            if 'mcp_tools_used' in result:
-                state['mcp_tools_used'].extend(result['mcp_tools_used'])
+            # DiagnosisAgent returns 'tool_results' (e.g. {'create-work-order': {...}}),
+            # not a 'mcp_tools_used' list - derive it from the tool_results keys.
+            if state['tool_results']:
+                state['mcp_tools_used'].extend(state['tool_results'].keys())
             
             logger.info(f"  → Diagnosis: {state['diagnosis']}, Action: {state['action']}")
             return state

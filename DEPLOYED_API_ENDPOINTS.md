@@ -135,8 +135,10 @@ Lambda Function
     orchestrator-handler-450410489798
     ↓
 AgentCore Orchestrator Runtime
+    (internal sequencing via LangGraph StateGraph - see
+     src/graph/workflow_agentcore.py)
     ↓
-HealthAgent / DiagnosisAgent
+HealthAgent / DiagnosisAgent (separate AgentCore Runtimes)
     ↓
 MCP Tools
 ```
@@ -204,6 +206,9 @@ actual invocation protocol.
       always report "healthy" with zero anomalies)
 - [x] Orchestrator's tool_results/mcp_tools_used forwarding bug fixed (was
       causing dashboard work orders/maintenance/spare parts to always show 0)
+- [x] LangGraph `StateGraph` orchestration reintroduced (`src/graph/workflow_agentcore.py`,
+      wired into `src/services/orchestrator/handler.py`) - see
+      `docs/PHASE_4_AGENTCORE_DEPLOYMENT.md` for details
 
 ---
 
@@ -217,4 +222,5 @@ actual invocation protocol.
 | 2026-07-24 | /orchestrate/devices, /devices/{id}, /devices/{id}/summary, /health | ✅ Active | Added GET routes so dashboard can list/fetch/summarize fleet devices without a locally-run orchestrator |
 | 2026-07-24 | (health-agent fix) | ✅ Active | Fixed double-wrapped current_reading bug causing HealthAgent to always report "healthy"/0 anomalies |
 | 2026-07-24 | (orchestrator fix) | ✅ Active | Fixed missing tool_results / mismatched mcp_tools_used fields so dashboard's work orders/maintenance/spare parts counts reflect real MCP tool call results |
+| 2026-08-11 | (orchestrator internal refactor) | ✅ Active | Reintroduced LangGraph `StateGraph` orchestration (`src/graph/workflow_agentcore.py`) in place of the flat sequential handler; fixed two latent bugs surfaced by wiring it in (response `body` not unwrapped, `runtimeSessionId` too short for DiagnosisAgent) - external request/response shape unchanged |
 

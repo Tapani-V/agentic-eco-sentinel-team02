@@ -58,6 +58,7 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
         health_status = event.get('health_status', 'unknown')
         degradation_score = event.get('degradation_score', 0.0)
         anomalies = event.get('anomalies', [])
+        current_reading = event.get('current_reading', {})
         
         logger.info(f"Diagnosing device {device_id} - Status: {health_status}")
         
@@ -70,7 +71,8 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
             'equipment_type': equipment_type,
             'health_status': health_status,
             'degradation_score': degradation_score,
-            'anomalies': anomalies
+            'anomalies': anomalies,
+            'current_reading': current_reading
         }
         
         # Run the async execute method
