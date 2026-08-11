@@ -209,6 +209,34 @@ python3 -m uvicorn src.dashboard.app:app --host 0.0.0.0 --port 8080 &
 3. **Monitor Browser Console** - Should see no "Failed to fetch" errors
 4. **Monitor Dashboard Process** - Should remain stable (no crashes)
 
+## Regression & Re-fix (2026-08-11)
+
+This fix regressed at some point (likely during the AgentCore migration's
+rewrite of `fleet_summary()`) - the cached `result` object stopped
+including the raw `work_orders`/`maintenance_schedules`/`spare_parts`
+lists (only summary counts under `_mcp_data` remained), so the `if cached
+and 'work_orders' in cached` checks in the consumer endpoints always
+missed and silently fell back to independently re-fetching all 17 devices
+again. Since `/devices` (`list_devices`) has the same "fetch all devices"
+pattern with no cache check at all, every dashboard page load could
+trigger **4-5 fully redundant, uncoordinated full-fleet scans running
+concurrently** (fleet-summary, work-orders, maintenance-schedule,
+spare-parts, devices), which is what made the dashboard appear stuck
+"loading" for minutes instead of the expected ~90-100s single scan.
+
+Re-fixed in `src/dashboard/routes/api.py`:
+- `fleet_summary()` now stores `work_orders`, `maintenance_schedules`,
+  `spare_parts`, and a new `devices_list` key in its cached result.
+- `/devices` now also checks the cache first (previously had no caching
+  at all), matching the other 3 endpoints.
+- All 4 consumer endpoints are guarded by the same `fetch_queue.is_fetching()`
+  check `fleet_summary()` uses, so a cold-cache request waits for the
+  in-flight scan instead of starting a competing one.
+- `OrchestratorClient.get()` also now retries intermittent
+  `ssl.SSLCertVerificationError` (previously only retried
+  `httpx.ConnectError`/`TimeoutException`), which was silently dropping
+  devices from the fleet data for the entire cache TTL when it occurred.
+
 ## Future Improvements
 
 1. **Persistent Cache** - Store cache to disk to survive restarts
