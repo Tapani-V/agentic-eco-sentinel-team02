@@ -114,11 +114,8 @@ app.include_router(api.router, prefix="/api", tags=["api"])
 async def root(request: Request):
     """Serve main dashboard page with version and metadata"""
     logger.info("📊 Dashboard page requested")
-    # Installed Starlette (0.27.0) uses the legacy calling convention -
-    # context must include "request" (newer TemplateResponse(request, name,
-    # context) signature isn't available until later Starlette versions).
-    return templates.TemplateResponse("index.html", {
-        "request": request,
+    # This venv's Starlette (1.3.1) requires the request-first signature.
+    return templates.TemplateResponse(request, "index.html", {
         "app_version": settings.APP_VERSION,
         "app_name": settings.APP_NAME,
     })
