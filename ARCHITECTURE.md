@@ -35,7 +35,9 @@ flowchart TD
     F --> G
     G --> H{{action}}
     H -- URGENT_REPAIR --> I["create-work-order"]
-    H -- SCHEDULE_MAINTENANCE --> J["get-spare-parts -> schedule-maintenance -> create-work-order"]
+    H -- SCHEDULE_MAINTENANCE --> J["get-spare-parts"]
+    J -- parts available --> J1["schedule-maintenance"]
+    J -- parts NOT available --> J2["create-work-order (procurement)"]
     H -- MONITOR_ONLY --> K["no tool calls"]
 ```
 
@@ -53,8 +55,11 @@ flowchart TD
 4. **Execute the action** — each `action` maps to a different set of real MCP tool calls
    via `GatewayClient`:
    - `URGENT_REPAIR` → `create-work-order` (emergency work order)
-   - `SCHEDULE_MAINTENANCE` → `get-spare-parts` (mandatory availability check) →
-     `schedule-maintenance` (writes to DynamoDB) → `create-work-order`
+   - `SCHEDULE_MAINTENANCE` → always calls `get-spare-parts` first (part type guessed from
+     the anomaly, e.g. vibration → bearing), **then forks**: parts available →
+     `schedule-maintenance` (preventive, 7 days out); parts NOT available →
+     `create-work-order` instead (high-priority procurement request) — never both
+     `schedule-maintenance` and `create-work-order` in the same call.
    - `MONITOR_ONLY` → no tool calls, just a logged recommendation
 
 Output includes `diagnosis`, `confidence`, `confidence_rule_based` (the pre-LLM value, so
