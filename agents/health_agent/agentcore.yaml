@@ -10,13 +10,13 @@ agents:
     name: agentic-health-agent
     type: worker
     version: "1.0.0"
-    entrypoint: src.services.health_agent.app:app
+    entrypoint: src.services.health_agent.handler
     
     description: |
       Equipment health analysis agent.
       Analyzes sensor data, generates health scores, identifies anomalies.
       
-    dockerfile: Dockerfile.health_agent
+    dockerfile: deployment/agentcore-runtime/health_agent.Dockerfile
     
     deployment:
       mode: cloud

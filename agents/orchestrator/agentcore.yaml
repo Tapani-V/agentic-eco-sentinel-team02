@@ -10,13 +10,13 @@ agents:
     name: agentic-orchestrator
     type: orchestrator
     version: "1.0.0"
-    entrypoint: src.services.orchestrator.app:app
+    entrypoint: src.services.orchestrator.handler
     
     description: |
       Multi-agent orchestrator for equipment health and diagnosis.
       Coordinates health and diagnosis agents, routes requests, manages workflow.
       
-    dockerfile: Dockerfile.orchestrator
+    dockerfile: deployment/agentcore-runtime/orchestrator.Dockerfile
     
     deployment:
       mode: cloud

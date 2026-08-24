@@ -10,13 +10,13 @@ agents:
     name: agentic-diagnosis-agent
     type: worker
     version: "1.0.0"
-    entrypoint: src.services.diagnosis_agent.app:app
+    entrypoint: src.services.diagnosis_agent.handler
     
     description: |
       Equipment diagnosis and recommendations agent.
       Diagnoses equipment issues, generates maintenance recommendations, calls MCP tools.
       
-    dockerfile: Dockerfile.diagnosis_agent
+    dockerfile: deployment/agentcore-runtime/diagnosis_agent.Dockerfile
     
     deployment:
       mode: cloud

@@ -156,8 +156,9 @@ class AgentCoreworkflow:
             logger.info(f"  → {runtime_id} response received")
             
             # Agent handlers return Lambda-style {"statusCode": ..., "body": {...}}
-            # responses (see agentcore_entrypoint.py, which returns the handler's
-            # result as-is). Unwrap "body" to get the actual agent output.
+            # responses (see src/services/<agent>/handler.py's @app.entrypoint
+            # function, which returns this envelope as-is). Unwrap "body" to get
+            # the actual agent output.
             if isinstance(result, dict) and 'body' in result:
                 if result.get('statusCode', 200) >= 400:
                     error_body = result['body']

@@ -1,15 +1,20 @@
 """
-AgentCore Runtime Handler for DiagnosisAgent
+AgentCore Runtime entry point for DiagnosisAgent.
 
-This is the entry point that AgentCore Runtime invokes directly.
-It handles the AgentCore invocation protocol and delegates to the DiagnosisAgent logic.
+This file itself IS the container's server: AgentCore Runtime POSTs invocation
+payloads to /invocations (and health-checks /ping) on port 8080, both served
+by BedrockAgentCoreApp - no separate wrapper script needed.
 """
 
 import json
 import logging
 import asyncio
-from typing import Dict, Any
 import sys
+from typing import Dict, Any
+
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+
+from src.agents.diagnosis_agent import DiagnosisAgent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,87 +23,45 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from src.agents.diagnosis_agent import DiagnosisAgent
+app = BedrockAgentCoreApp()
+agent = DiagnosisAgent()
 
 
-def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+@app.entrypoint
+def invoke(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    AgentCore Runtime handler for DiagnosisAgent.
-    
-    Args:
-        event: Invocation payload
-            {
-                "device_id": "motor-004",
-                "equipment_type": "MOTOR",
-                "health_status": "warning",
-                "degradation_score": 0.5,
-                "anomalies": [...]
-            }
-        context: Lambda context
-        
-    Returns:
-        {
-            "statusCode": 200,
-            "body": {
-                "diagnosis": "...",
-                "action": "...",
-                "confidence": 0.8,
-                "severity": "medium",
-                "mcp_tools_used": [...]
-            }
-        }
+    Payload: {"device_id", "equipment_type", "health_status", "degradation_score", "anomalies"}
+    Returns: {"statusCode": 200, "body": {"diagnosis": ..., "action": ..., "confidence": ..., ...}}
     """
     try:
-        logger.info(f"DiagnosisAgent handler invoked")
-        logger.info(f"Payload: {json.dumps(event)[:200]}")
-        
-        # Parse input
-        device_id = event.get('device_id', 'unknown')
-        equipment_type = event.get('equipment_type', 'UNKNOWN')
-        health_status = event.get('health_status', 'unknown')
-        degradation_score = event.get('degradation_score', 0.0)
-        anomalies = event.get('anomalies', [])
-        current_reading = event.get('current_reading', {})
-        
-        logger.info(f"Diagnosing device {device_id} - Status: {health_status}")
-        
-        # Initialize diagnosis agent
-        agent = DiagnosisAgent()
-        
-        # Prepare input for agent
-        input_data = {
+        logger.info(f"Payload: {json.dumps(payload)[:200]}")
+
+        device_id = payload.get('device_id', 'unknown')
+        equipment_type = payload.get('equipment_type', 'UNKNOWN')
+        health_status = payload.get('health_status', 'unknown')
+        degradation_score = payload.get('degradation_score', 0.0)
+        anomalies = payload.get('anomalies', [])
+        current_reading = payload.get('current_reading', {})
+
+        result = asyncio.run(agent.execute({
             'device_id': device_id,
             'equipment_type': equipment_type,
             'health_status': health_status,
             'degradation_score': degradation_score,
             'anomalies': anomalies,
             'current_reading': current_reading
-        }
-        
-        # Run the async execute method
-        result = asyncio.run(agent.execute(input_data))
-        
+        }))
+
         logger.info(f"Diagnosis result: {result.get('action')}")
-        
-        return {
-            'statusCode': 200,
-            'body': result
-        }
-        
+        return {'statusCode': 200, 'body': result}
+
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Error in DiagnosisAgent handler: {error_msg}")
-        logger.exception("Full traceback:")
-        
+        logger.exception("DiagnosisAgent invocation failed")
         return {
             'statusCode': 500,
-            'body': {
-                'error': 'DiagnosisAgent processing failed',
-                'details': error_msg[:200]
-            }
+            'body': {'error': 'DiagnosisAgent processing failed', 'details': str(e)[:200]}
         }
 
 
-def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
-    """Alternative entry point name"""
-    return lambda_handler(event, context)
+if __name__ == "__main__":
+    app.run(port=8080)

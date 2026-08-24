@@ -1,15 +1,20 @@
 """
-AgentCore Runtime Handler for HealthAgent
+AgentCore Runtime entry point for HealthAgent.
 
-This is the entry point that AgentCore Runtime invokes directly.
-It handles the AgentCore invocation protocol and delegates to the HealthAgent logic.
+This file itself IS the container's server: AgentCore Runtime POSTs invocation
+payloads to /invocations (and health-checks /ping) on port 8080, both served
+by BedrockAgentCoreApp - no separate wrapper script needed.
 """
 
 import json
 import logging
 import asyncio
-from typing import Dict, Any
 import sys
+from typing import Dict, Any
+
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+
+from src.agents.health_agent import HealthAgent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,50 +23,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from src.agents.health_agent import HealthAgent
+app = BedrockAgentCoreApp()
+agent = HealthAgent()
 
 
-def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+@app.entrypoint
+def invoke(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    AgentCore Runtime handler for HealthAgent.
-    
-    This function is invoked by AgentCore Runtime when the agent is called.
-    
-    Args:
-        event: Invocation payload from AgentCore
-            {
-                "device_id": "motor-004",
-                "equipment_type": "MOTOR",
-                "current_reading": {...}
-            }
-        context: Lambda context (unused for AgentCore)
-        
-    Returns:
-        {
-            "statusCode": 200,
-            "body": {
-                "device_id": "...",
-                "health_status": "...",
-                "degradation_score": 0.5,
-                "anomalies": [...],
-                "timestamp": "..."
-            }
-        }
+    Payload: {"device_id": "motor-004", "equipment_type": "MOTOR", "current_reading": {...}}
+    Returns: {"statusCode": 200, "body": {"device_id": ..., "health_status": ..., ...}}
     """
     try:
-        logger.info(f"HealthAgent handler invoked")
-        logger.info(f"Payload: {json.dumps(event)[:200]}")
-        
-        # Parse input
-        device_id = event.get('device_id', 'unknown')
-        equipment_type = event.get('equipment_type', 'UNKNOWN')
-        current_reading = event.get('current_reading', {})
-        
-        logger.info(f"Processing device {device_id} ({equipment_type})")
-        
-        # Initialize health agent
-        agent = HealthAgent()
-        
+        logger.info(f"Payload: {json.dumps(payload)[:200]}")
+
+        device_id = payload.get('device_id', 'unknown')
+        equipment_type = payload.get('equipment_type', 'UNKNOWN')
+        current_reading = payload.get('current_reading', {})
+
         # current_reading may already be shaped as {"readings": {...}} (e.g. when
         # sourced from DeviceLoader/S3 via the orchestrator's get_device action),
         # or may be a flat sensor dict (e.g. a direct POST /orchestrate caller).
@@ -71,38 +49,23 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
             normalized_reading = current_reading
         else:
             normalized_reading = {'readings': current_reading}
-        
-        # Prepare input for agent
-        input_data = {
+
+        result = asyncio.run(agent.execute({
             'device_id': device_id,
             'equipment_type': equipment_type,
             'current_reading': normalized_reading
-        }
-        
-        # Run the async execute method
-        result = asyncio.run(agent.execute(input_data))
-        
+        }))
+
         logger.info(f"Analysis result: {result.get('health_status')}")
-        
-        return {
-            'statusCode': 200,
-            'body': result
-        }
-        
+        return {'statusCode': 200, 'body': result}
+
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Error in HealthAgent handler: {error_msg}")
-        logger.exception("Full traceback:")
-        
+        logger.exception("HealthAgent invocation failed")
         return {
             'statusCode': 500,
-            'body': {
-                'error': 'HealthAgent processing failed',
-                'details': error_msg[:200]
-            }
+            'body': {'error': 'HealthAgent processing failed', 'details': str(e)[:200]}
         }
 
 
-def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
-    """Alternative entry point name (some runtimes use 'handler' instead of 'lambda_handler')"""
-    return lambda_handler(event, context)
+if __name__ == "__main__":
+    app.run(port=8080)

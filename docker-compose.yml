@@ -3,7 +3,7 @@ services:
   health-agent:
     build:
       context: .
-      dockerfile: Dockerfile.health_agent
+      dockerfile: deployment/docker-compose/health_agent.Dockerfile
     container_name: health-agent
     ports:
       - "8001:8001"
@@ -32,7 +32,7 @@ services:
   diagnosis-agent:
     build:
       context: .
-      dockerfile: Dockerfile.diagnosis_agent
+      dockerfile: deployment/docker-compose/diagnosis_agent.Dockerfile
     container_name: diagnosis-agent
     ports:
       - "8002:8002"
@@ -64,7 +64,7 @@ services:
   orchestrator:
     build:
       context: .
-      dockerfile: Dockerfile.orchestrator
+      dockerfile: deployment/docker-compose/orchestrator.Dockerfile
     container_name: orchestrator
     ports:
       - "8000:8000"

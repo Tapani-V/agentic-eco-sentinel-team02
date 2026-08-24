@@ -1,12 +1,13 @@
 """
-AgentCore Runtime Handler for OrchestratorAgent
+AgentCore Runtime entry point for OrchestratorAgent.
 
-This is the entry point that AgentCore Runtime invokes directly.
+This file itself IS the container's server: AgentCore Runtime POSTs invocation
+payloads to /invocations (and health-checks /ping) on port 8080, both served
+by BedrockAgentCoreApp - no separate wrapper script needed.
+
 It orchestrates calls to HealthAgent and DiagnosisAgent via a LangGraph
 StateGraph workflow (src.graph.workflow_agentcore.AgentCoreworkflow), whose
 nodes call the other agents via boto3.invoke_agent_runtime().
-
-This is what Lambda will call via boto3.invoke_agent_runtime().
 
 Supported invocation payloads (dispatched via the optional "action" field):
 - {"device_id", "equipment_type", "current_reading"}  (no "action", or action="analyze")
@@ -31,12 +32,16 @@ import sys
 import time
 from datetime import datetime
 
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s: %(message)s',
     stream=sys.stdout
 )
 logger = logging.getLogger(__name__)
+
+app = BedrockAgentCoreApp()
 
 
 # Agent runtime IDs (from deployment)
@@ -146,18 +151,16 @@ async def _analyze_device(device_id: str, equipment_type: str, current_reading: 
     return final_result
 
 
-def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+@app.entrypoint
+def invoke(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    AgentCore Runtime handler for OrchestratorAgent.
-    
     Dispatches based on the optional "action" field - see module docstring
     for supported payloads.
     """
     try:
-        logger.info(f"OrchestratorAgent handler invoked")
-        logger.info(f"Payload: {json.dumps(event)[:200]}")
+        logger.info(f"Payload: {json.dumps(payload)[:200]}")
         
-        action = event.get('action', 'analyze')
+        action = payload.get('action', 'analyze')
         
         # ---- action: health ----
         if action == 'health':
@@ -176,7 +179,7 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
         
         # ---- action: get_device_summary ----
         if action == 'get_device_summary':
-            device_id = event.get('device_id')
+            device_id = payload.get('device_id')
             if not device_id:
                 return {'statusCode': 400, 'body': {'error': 'device_id is required'}}
             summary = _get_device_loader().get_device_summary(device_id)
@@ -186,7 +189,7 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
         
         # ---- action: get_device (load raw reading from S3, then analyze) ----
         if action == 'get_device':
-            device_id = event.get('device_id')
+            device_id = payload.get('device_id')
             if not device_id:
                 return {'statusCode': 400, 'body': {'error': 'device_id is required'}}
             
@@ -202,9 +205,9 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
             return {'statusCode': 200, 'body': result_body}
         
         # ---- default action: analyze (existing behavior - reading supplied directly) ----
-        device_id = event.get('device_id', 'unknown')
-        equipment_type = event.get('equipment_type', 'UNKNOWN')
-        current_reading = event.get('current_reading', {})
+        device_id = payload.get('device_id', 'unknown')
+        equipment_type = payload.get('equipment_type', 'UNKNOWN')
+        current_reading = payload.get('current_reading', {})
         
         logger.info(f"Processing device {device_id} ({equipment_type})")
         
@@ -228,6 +231,5 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
         }
 
 
-def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
-    """Alternative entry point name"""
-    return lambda_handler(event, context)
+if __name__ == "__main__":
+    app.run(port=8080)

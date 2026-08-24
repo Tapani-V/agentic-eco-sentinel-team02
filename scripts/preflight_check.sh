@@ -44,13 +44,11 @@ files_to_check=(
     "src/services/orchestrator/app.py"
     "src/services/health_agent/app.py"
     "src/services/diagnosis_agent/app.py"
-    "src/services/orchestrator/Dockerfile"
-    "src/services/health_agent/Dockerfile"
-    "src/services/diagnosis_agent/Dockerfile"
+    "deployment/docker-compose/orchestrator.Dockerfile"
+    "deployment/docker-compose/health_agent.Dockerfile"
+    "deployment/docker-compose/diagnosis_agent.Dockerfile"
     "docker-compose.yml"
     "tests/test_e2e_all_stories.py"
-    "run_manual_e2e_test.py"
-    "run_e2e_tests.sh"
     ".agentcore.env"
 )
 
@@ -189,7 +187,7 @@ if [ $CHECKS_FAILED -eq 0 ]; then
     echo "Next steps:"
     echo "1. Start services: docker-compose up -d --build"
     echo "2. Check health: curl http://localhost:8000/health"
-    echo "3. Run tests: python run_manual_e2e_test.py"
+    echo "3. Run tests: python -m pytest tests/ -v"
     exit 0
 else
     echo -e "${RED}✗ Some checks failed. Please fix issues above.${NC}"

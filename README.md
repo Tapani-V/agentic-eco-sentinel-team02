@@ -1,123 +1,81 @@
-# Agentic AI POC - Multi-Agent Equipment Diagnostics
+# Agentic Eco-Sentinel
 
-**Phase 1 (Current):** Local agents + real AWS services  
-**Phase 2 (Future):** Serverless deployment with auto-scaling
+Multi-agent equipment health & diagnostics system built with **LangGraph**, deployable
+either locally (Docker Compose) or on **AWS Bedrock AgentCore Runtime**.
 
----
+Given a device's sensor reading, the system classifies its health, and — only if
+something looks wrong — runs a deeper diagnosis that can call real tools (check spare
+parts, schedule maintenance, create a work order).
 
-## 🎯 What You're Building
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how it all fits together, and
+[HACKATHON_README.md](HACKATHON_README.md) if you're here for the hackathon.
 
-A production-grade multi-agent system for equipment diagnostics:
+## Repository layout
 
 ```
-┌─────────────────────────────────┐
-│  YOUR MACHINE (Phase 1)         │
-│  ├─ 4 Local Agents (Python)     │
-│  ├─ FastAPI (port 8000)         │
-│  └─ React Dashboard (port 3000) │
-└──────────┬──────────────────────┘
-           │ AgentCore Gateway
-           ▼
-    ┌────────────────────┐
-    │  AWS SERVICES      │
-    │  ├─ Lambda Tools   │
-    │  ├─ ECS Tools      │
-    │  ├─ Cognito        │
-    │  ├─ DynamoDB       │
-    │  └─ AgentCore      │
-    └────────────────────┘
+src/
+  agents/            Core agent logic (HealthAgent, DiagnosisAgent) - pure Python, no HTTP
+  graph/             LangGraph orchestration (workflow.py = local, workflow_agentcore.py = AWS)
+  services/          Per-agent service wrappers
+    health_agent/    app.py (local FastAPI) + handler.py (AgentCore entrypoint)
+    diagnosis_agent/ app.py (local FastAPI) + handler.py (AgentCore entrypoint)
+    orchestrator/    app.py (local FastAPI) + handler.py (AgentCore entrypoint)
+  gateway/           Client for calling MCP tools via the AgentCore Gateway
+  dashboard/         Local Jinja2 + FastAPI monitoring dashboard
+  data/, utils/      Device data loading helpers
+
+deployment/
+  docker-compose/    Dockerfiles used by docker-compose.yml (local dev)
+  agentcore-runtime/ Dockerfiles + build/push script for AWS Bedrock AgentCore Runtime
+
+agents/<agent>/agentcore.yaml   AgentCore Runtime config per agent
+tools/lambdas/                  Real AWS Lambda functions (MCP tool implementations)
+scripts/                        Deployment, IAM, Cognito, DynamoDB, S3, Gateway setup scripts
+tests/                          Integration/e2e test suite (pytest)
 ```
 
-**Key Pattern:** Agents call AgentCore Gateway (not tools directly). Gateway handles:
-- **Tool Routing** → Lambda/ECS endpoints
-- **Memory** → DynamoDB conversation storage
-- **Identity** → Cognito token validation
+## Run locally (Docker Compose)
 
----
-
-## 📚 Documentation
-
-**Start here:**
-
-| Document | Purpose | Time |
-|----------|---------|------|
-| [PHASE_1_ARCHITECTURE.md](docs/PHASE_1_ARCHITECTURE.md) | System design | 15 min |
-| [PHASE_1_IMPLEMENTATION.md](docs/PHASE_1_IMPLEMENTATION.md) | Week-by-week guide | Read as you build |
-| [PHASE_2_ARCHITECTURE.md](docs/PHASE_2_ARCHITECTURE.md) | Serverless deployment | 10 min |
-| [PHASE_2_IMPLEMENTATION.md](docs/PHASE_2_IMPLEMENTATION.md) | Phase 2 steps | When ready |
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.11+
-- Node 18+
-- AWS account
-- `aws configure` completed
-
-### Phase 1 Workflow
-
-1. **Understand:** Read [PHASE_1_ARCHITECTURE.md](docs/PHASE_1_ARCHITECTURE.md)
-2. **Follow:** Read current day in [PHASE_1_IMPLEMENTATION.md](docs/PHASE_1_IMPLEMENTATION.md)
-3. **Request Code:** Ask AI: *"Generate code for Week 1 Day 1-2: Project setup"*
-4. **Integrate:** Copy code, run tests
-5. **Next:** Move to next day/week
-
-### Running Phase 1
+This is the recommended way to develop and test agent changes.
 
 ```bash
-# Terminal 1: Backend
-python -m src.api.main
-# http://localhost:8000/docs
+docker-compose up -d --build
+curl http://localhost:8000/health
+```
 
-# Terminal 2: Frontend
-cd dashboard && npm start
-# http://localhost:3000
+- Orchestrator: `http://localhost:8000`
+- HealthAgent: `http://localhost:8001`
+- DiagnosisAgent: `http://localhost:8002`
 
-# Terminal 3: Tests
+Local containers still call the **real, shared** AWS AgentCore Gateway (MCP tools),
+Cognito, and DynamoDB — there is no local/mock version of these. They authenticate using
+your host machine's AWS credentials (`~/.aws` is mounted read-only into each container)
+and `.agentcore.env` (copy from `.agentcore.env.example` if you don't have one).
+
+## Run on AWS Bedrock AgentCore Runtime
+
+Each agent (`health-agent`, `diagnosis-agent`, `orchestrator`) is deployed as its own
+AgentCore Runtime, built from `deployment/agentcore-runtime/<agent>.Dockerfile`.
+
+```bash
+./deployment/agentcore-runtime/build_and_push.sh          # build + push arm64 images to ECR
+python3 scripts/deploy_to_agentcore_boto3.py --profile <your-profile>   # register/update runtimes
+```
+
+## Run the dashboard
+
+```bash
+cd src/dashboard
+pip install -r requirements.txt
+python app.py     # http://localhost:8080
+```
+
+## Tests
+
+```bash
 python -m pytest tests/ -v
 ```
 
----
-
-## 🏗️ What Gets Built
-
-**Week 1 (Setup):**
-- Project structure + AWS resources (Cognito, DynamoDB)
-- Synthetic sensor data generator
-- Local agents with AgentCore Gateway integration
-- AgentCore SDK setup
-
-**Week 2 (MCP Tools + Registration):**
-- Lambda tools deployed (MCP-1, MCP-2)
-- ECS tools deployed (MCP-3, MCP-4) with GPT-4o LLM
-- **Tools registered with AgentCore Gateway** (critical step)
-- FastAPI backend integration
-
-**Week 3 (Frontend + Testing):**
-- React dashboard
-- End-to-end testing
-- Production ready
-
----
-
-## 💰 Cost Estimate
-
-| Phase | Monthly | Notes |
-|-------|---------|-------|
-| Phase 1 (local agents) | $35-80 | Includes ~$5-15 for LLM (GPT-4o) if enabled |
-| Phase 2 (serverless) | $50-120 | Agents move to Lambda, LLM unchanged |
-
----
-
-## ✅ Phase 1 Success
-
-- All 4 agents working locally with AgentCore Gateway
-- Lambda + ECS tools deployed and registered with Gateway
-- FastAPI + React fully functional
-- E2E tests passing (agent → Gateway → tools → results)
-- Ready for Phase 2
 
 ---
 
