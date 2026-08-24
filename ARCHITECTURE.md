@@ -23,6 +23,22 @@ Output: `health_status`, `degradation_score`, `anomalies` — this is exactly wh
 [`src/agents/diagnosis_agent.py`](src/agents/diagnosis_agent.py) only runs when
 `health_status` is `warning`/`critical`. It follows 4 steps:
 
+```mermaid
+flowchart TD
+    A["1. Pattern match\nequipment-specific rules"] --> B{"2. health_status\ncritical?"}
+    B -- yes --> C["Force action = URGENT_REPAIR"]
+    B -- no --> D{"3. confidence >= 0.85?"}
+    D -- yes --> E["Trust the rule\n(skip LLM)"]
+    D -- no --> F["Call LLM to verify/override\ndiagnosis, action, confidence"]
+    C --> G["4. Execute action"]
+    E --> G
+    F --> G
+    G --> H{{action}}
+    H -- URGENT_REPAIR --> I["create-work-order"]
+    H -- SCHEDULE_MAINTENANCE --> J["get-spare-parts -> schedule-maintenance -> create-work-order"]
+    H -- MONITOR_ONLY --> K["no tool calls"]
+```
+
 1. **Pattern match** — equipment-specific rules (`PUMP`/`MOTOR`/`COMPRESSOR`/`GENERATOR`)
    match the anomaly list against known failure signatures, producing a `diagnosis`,
    `confidence` (0.0–1.0), a recommended `action`, and a `severity`.
@@ -143,13 +159,23 @@ redeploy, or reconfigure any of them:
 - **AgentCore Gateway** — real endpoint in `.agentcore.env` (`GATEWAY_URL`). Agents call
   it via [`src/gateway/client.py`](src/gateway/client.py); it routes to the actual tool
   implementations.
-- **MCP tools** (3 total): `get_spare_parts` and `schedule_maintenance` (real AWS Lambda
-  functions, `tools/lambdas/`), and `create_work_order` (a real App Runner/ECS HTTP
-  service).
+- **MCP tools** (3 total), each with a JSON tool schema in `tools/schemas/`:
+
+  | Tool | Implementation | Storage |
+  |---|---|---|
+  | `get-spare-parts` | AWS Lambda: [`tools/lambdas/get_spare_parts_handler.py`](tools/lambdas/get_spare_parts_handler.py) | Reads a static parts catalog from S3, seeded from [`data/mcp-tools/spare_parts_inventory.json`](data/mcp-tools/spare_parts_inventory.json) |
+  | `schedule-maintenance` | AWS Lambda: [`tools/lambdas/schedule_maintenance_handler.py`](tools/lambdas/schedule_maintenance_handler.py) | Writes a new record to the DynamoDB `maintenance_schedules` table |
+  | `create-work-order` | App Runner/ECS FastAPI service: [`src/ecs_tasks/create_work_order/app.py`](src/ecs_tasks/create_work_order/app.py) (own `Dockerfile`, deployed via `scripts/deploy_create_work_order_apprunner.sh`/`_ecs.sh`) | Writes a new record to the DynamoDB `work_orders` table |
+
+  `data/mcp-tools/` only contains `spare_parts_inventory.json` because `get-spare-parts`
+  is the only tool that *queries* a fixed reference dataset — `schedule-maintenance` and
+  `create-work-order` *generate* new records (a maintenance schedule / a work order) on
+  every call, so they have nothing to seed; they just write straight to their own
+  DynamoDB table.
 - **Cognito** — used for Gateway token auth (`client_credentials` grant). Config lives in
   `.agentcore.env`.
-- **DynamoDB** — real tables (e.g. `agentic-maintenance-schedule`), written to by the
-  Lambda tools. There is no local/mock DynamoDB — local Docker Compose containers use
+- **DynamoDB** — real tables (`maintenance_schedules`, `work_orders`), written to by the
+  tools above. There is no local/mock DynamoDB — local Docker Compose containers use
   your host's real AWS credentials (`~/.aws` mounted read-only) to hit the same tables
   AgentCore Runtime deployments use.
 
