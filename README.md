@@ -77,6 +77,15 @@ python -m pytest tests/ -v
 
 ## Verify this branch works
 
+Run everything below in one shot:
+
+```bash
+./scripts/verify_branch.sh              # local Docker Compose path only
+./scripts/verify_branch.sh --agentcore  # also build/push/deploy/invoke AgentCore Runtime
+```
+
+Or step by step:
+
 ### 1. Local (Docker Compose) — do this first
 
 ```bash
