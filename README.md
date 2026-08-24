@@ -75,6 +75,65 @@ python app.py     # http://localhost:8080
 python -m pytest tests/ -v
 ```
 
+## Verify this branch works
+
+### 1. Local (Docker Compose) — do this first
+
+```bash
+docker-compose up -d --build
+docker-compose ps                      # all 3 containers should be "healthy"
+curl http://localhost:8000/health      # orchestrator
+curl http://localhost:8001/health      # health-agent
+curl http://localhost:8002/health      # diagnosis-agent
+python -m pytest tests/ -v             # runs against the containers above
+python tests/test_e2e_all_stories.py   # exercises all 4 story scenarios end to end
+```
+`test_e2e_all_stories.py`'s "Ambiguous"/"Emergency" stories route through DiagnosisAgent
+and call the real MCP tools — a pass there confirms the Gateway/Cognito/DynamoDB path is
+working, not just the two agents talking to each other.
+
+### 2. AWS Bedrock AgentCore Runtime
+
+```bash
+./deployment/agentcore-runtime/build_and_push.sh
+python3 scripts/deploy_to_agentcore_boto3.py --profile <your-profile>   # writes agent_endpoints.json
+
+# Invoke each deployed runtime directly to confirm the container/entrypoint works:
+python scripts/invoke_agentcore_runtime.py health_agent
+python scripts/invoke_agentcore_runtime.py diagnosis_agent
+python scripts/invoke_agentcore_runtime.py orchestrator
+```
+A `statusCode: 200` response with a populated `body` means that runtime's container
+booted, `BedrockAgentCoreApp` served the request, and (for orchestrator/diagnosis_agent)
+any nested `invoke_agent_runtime`/MCP tool calls succeeded. Check
+`scripts/preflight_check.sh` if you hit a setup error before getting that far.
+
+### 3. Dashboard
+
+```bash
+cd src/dashboard && python app.py   # http://localhost:8080
+```
+Requires the orchestrator to be reachable (local on :8000, or point it at deployed
+AgentCore endpoints — see `src/dashboard/config.py`).
+
+### What "working" means, component by component
+
+| Component | How to check |
+|---|---|
+| HealthAgent logic | `curl localhost:8001/health` returns 200 (local) or `invoke_agentcore_runtime.py health_agent` returns `statusCode: 200` (AWS) |
+| DiagnosisAgent logic + MCP tools | Same as above for `diagnosis_agent`; check the response's `tool_results`/`action_taken` fields are populated, not empty |
+| LangGraph routing | `tests/test_e2e_all_stories.py`'s 4 stories — healthy devices should **not** show diagnosis fields, warning/critical ones should |
+| AgentCore Gateway + Cognito | Any diagnosis call that reaches `get_spare_parts`/`schedule_maintenance`/`create_work_order` without an auth error |
+| DynamoDB writes | After a `schedule_maintenance` call, check the `agentic-maintenance-schedule` table in the AWS console for a new item |
+| Dashboard | Loads device list/health data from the orchestrator without errors in the browser console |
+| Docker Compose wiring | `docker-compose ps` shows all 3 containers healthy, `docker-compose logs -f` shows no crash loops |
+| AgentCore Runtime deployment | `agent_endpoints.json` has fresh runtime IDs after `deploy_to_agentcore_boto3.py`, and `invoke_agentcore_runtime.py` succeeds for all 3 agents |
+
+Yes — you should run both the local Docker Compose checks and (at least once) the
+AgentCore Runtime invocation checks before considering the branch verified, since they
+exercise different code paths (`app.py` vs `handler.py`) that share business logic but not
+transport code.
+
 
 ---
 
