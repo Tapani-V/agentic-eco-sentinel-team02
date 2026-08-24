@@ -1,5 +1,59 @@
 # Architecture
 
+## Agent logic
+
+### HealthAgent — deterministic classification, no LLM
+
+[`src/agents/health_agent.py`](src/agents/health_agent.py) is pure threshold-based logic,
+no LLM, no external calls in the common case:
+
+1. **Detect anomalies** — for each sensor in `current_reading.readings`, compare its
+   `value` against its `normal_range`. Out-of-range sensors become anomaly strings, e.g.
+   `"temperature_high: 98°C (normal: 20-95°C)"`.
+2. **Score degradation** — each anomaly's severity (0.10/0.20/0.35/0.50) is based on how
+   far outside `normal_range` it is (percentage deviation), then summed and capped at 1.0.
+3. **Classify** — `degradation_score < 0.15` → `healthy`, `< 0.50` → `warning`, else
+   `critical`.
+
+Output: `health_status`, `degradation_score`, `anomalies` — this is exactly what the
+`router` node in the graph switches on.
+
+### DiagnosisAgent — 4-step rule-first, LLM-as-fallback
+
+[`src/agents/diagnosis_agent.py`](src/agents/diagnosis_agent.py) only runs when
+`health_status` is `warning`/`critical`. It follows 4 steps:
+
+1. **Pattern match** — equipment-specific rules (`PUMP`/`MOTOR`/`COMPRESSOR`/`GENERATOR`)
+   match the anomaly list against known failure signatures, producing a `diagnosis`,
+   `confidence` (0.0–1.0), a recommended `action`, and a `severity`.
+2. **Critical escalation** — if `health_status == 'critical'`, the action is always
+   force-escalated to `URGENT_REPAIR` regardless of the rule match (business rule: a
+   critical reading always means an immediate work order).
+3. **LLM fallback** — only when `confidence < 0.85` *and* the device isn't critical, the
+   rule's suggestion is sent to an LLM ([`src/llm/llm_client.py`](src/llm/llm_client.py),
+   Azure OpenAI) to verify/override the diagnosis, action, and confidence. High-confidence
+   rule matches skip the LLM call entirely (cost optimization, same idea as the `router`
+   node skipping DiagnosisAgent for healthy devices).
+4. **Execute the action** — each `action` maps to a different set of real MCP tool calls
+   via `GatewayClient`:
+   - `URGENT_REPAIR` → `create-work-order` (emergency work order)
+   - `SCHEDULE_MAINTENANCE` → `get-spare-parts` (mandatory availability check) →
+     `schedule-maintenance` (writes to DynamoDB) → `create-work-order`
+   - `MONITOR_ONLY` → no tool calls, just a logged recommendation
+
+Output includes `diagnosis`, `confidence`, `confidence_rule_based` (the pre-LLM value, so
+you can see whether/how the LLM changed the outcome), `action`, `action_taken`,
+`tool_results`, and `llm_used`.
+
+### Data flow
+
+Sensor readings come from `data/generated/` (synthetic per-device time series), loaded by
+`DeviceLoader` ([`src/utils/`](src/utils)). The Orchestrator reads a device's latest
+reading, hands it to HealthAgent, and — depending on the graph's `router` decision —
+optionally to DiagnosisAgent. See `WorkflowState` in
+[`src/graph/workflow.py`](src/graph/workflow.py) for the exact fields passed between
+nodes.
+
 ## The agent graph (LangGraph)
 
 Every device reading flows through the same 4-node graph, regardless of whether it runs
