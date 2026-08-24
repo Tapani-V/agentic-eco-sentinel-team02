@@ -28,7 +28,6 @@ deployment/
   docker-compose/    Dockerfiles used by docker-compose.yml (local dev)
   agentcore-runtime/ Dockerfiles + build/push script for AWS Bedrock AgentCore Runtime
 
-agents/<agent>/agentcore.yaml   AgentCore Runtime config per agent
 tools/lambdas/                  Real AWS Lambda functions (MCP tool implementations)
 scripts/                        Deployment, IAM, Cognito, DynamoDB, S3, Gateway setup scripts
 tests/                          Integration/e2e test suite (pytest)

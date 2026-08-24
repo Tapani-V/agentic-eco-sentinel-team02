@@ -54,9 +54,9 @@ copy of any of this. Practical implications:
 4. **Docker Compose** — add a service block to `docker-compose.yml`, pointing at a new
    `deployment/docker-compose/<your_agent>.Dockerfile` (copy an existing one and change
    the port/module path).
-5. **(Stretch) AgentCore Runtime** — add `deployment/agentcore-runtime/<your_agent>.Dockerfile`
-   and an `agents/<your_agent>/agentcore.yaml`, then extend
-   `scripts/deploy_to_agentcore_boto3.py`'s agent config.
+5. **(Stretch) AgentCore Runtime** — add `deployment/agentcore-runtime/<your_agent>.Dockerfile`,
+   build + push it to ECR, then extend `scripts/deploy_to_agentcore_boto3.py`'s agent config
+   (it registers pre-built ECR images directly via boto3 — no separate config file needed).
 
 That's it — no shared "lambda_handler" naming convention to work around, no generic entry
 point script to understand. Each agent is self-contained and readable top to bottom.
