@@ -17,11 +17,13 @@ Authentication:
   Supports custom CA certificates via AWS_CA_BUNDLE for corporate environments.
 
 SSL Certificate Issues (Corporate Networks):
-  For corporate proxy/firewall SSL issues:
-  1. AWS_CA_BUNDLE is automatically loaded from .agentcore.env
-  2. Example in .agentcore.env: AWS_CA_BUNDLE=config/minimal_certificate_bundle.pem
-  3. See AGENTCORE_MIGRATION_PHASE2_SSL_CERTIFICATE_SOLUTION.md for details
-  
+  If boto3/httpx raise [SSL: CERTIFICATE_VERIFY_FAILED] (common behind a
+  corporate TLS-intercepting proxy):
+  1. Set AWS_CA_BUNDLE=config/minimal_certificate_bundle.pem in .agentcore.env
+     (see .agentcore.env.example) - it's loaded automatically at app startup.
+  2. In AWS AgentCore Runtime .agentcore.env won't exist, so this is skipped
+     and boto3 falls back to the system cert store - no extra config needed there.
+
   DO NOT disable SSL verification (verify=False) - it's a security risk!
 """
 

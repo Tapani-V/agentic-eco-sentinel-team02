@@ -117,6 +117,13 @@ booted, `BedrockAgentCoreApp` served the request, and (for orchestrator/diagnosi
 any nested `invoke_agent_runtime`/MCP tool calls succeeded. Check
 `scripts/preflight_check.sh` if you hit a setup error before getting that far.
 
+**On a corporate network:** if boto3/httpx calls fail with
+`[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer
+certificate`, your proxy is intercepting TLS. Set `AWS_CA_BUNDLE=config/minimal_certificate_bundle.pem`
+in `.agentcore.env` (see `.agentcore.env.example`) — it's loaded automatically at app
+startup and falls back to the system cert store when unset (e.g. in AgentCore Runtime
+itself). Never work around this with `verify=False`.
+
 ### 3. Dashboard
 
 ```bash
