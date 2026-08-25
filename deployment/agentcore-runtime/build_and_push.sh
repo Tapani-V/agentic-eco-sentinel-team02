@@ -3,19 +3,36 @@
 # Build and push AgentCore Runtime images (ARM64, required by AWS Bedrock
 # AgentCore Runtime) to ECR.
 #
-# Usage: ./deployment/agentcore-runtime/build_and_push.sh
+# Usage: ./deployment/agentcore-runtime/build_and_push.sh [orchestrator|health_agent|diagnosis_agent]
 #
-# Run from the repository root. Builds all 3 agent images using the
-# Dockerfiles in this directory, then pushes them to ECR. After pushing,
-# register/update the runtimes with:
+# Run from the repository root. Builds all 3 agent images (or just one, if
+# named as an argument) using the Dockerfiles in this directory, then pushes
+# them to ECR. After pushing, register/update the runtime(s) with:
 #   python3 scripts/deploy_to_agentcore_boto3.py --profile <your-profile>
+#
+# Team image tag: images are tagged "${TEAM_ID}" (from .agentcore.env or the
+# environment) instead of "latest", so a team's rebuild never overwrites the
+# shared ":latest" image other teams/the default deployment may still use.
+# TEAM_ID is required - source .agentcore.env first or export it manually.
 
 set -e
 
-ACCOUNT_ID="450410489798"
-REGION="us-east-1"
+if [ -f ".agentcore.env" ]; then
+    # shellcheck disable=SC1091
+    set -a; source .agentcore.env; set +a
+fi
+
+if [ -z "$TEAM_ID" ]; then
+    echo "Error: TEAM_ID is not set. Add TEAM_ID=<yourteam> to .agentcore.env or export it." >&2
+    exit 1
+fi
+
+AGENT_FILTER="$1"
+ACCOUNT_ID="${AWS_ACCOUNT_ID:-450410489798}"
+REGION="${AWS_REGION:-us-east-1}"
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 DOCKERFILE_DIR="deployment/agentcore-runtime"
+TAG="$TEAM_ID"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -32,6 +49,21 @@ if [ ! -f "${DOCKERFILE_DIR}/orchestrator.Dockerfile" ]; then
 fi
 
 declare -a IMAGES=("orchestrator" "health_agent:health-agent" "diagnosis_agent:diagnosis-agent")
+
+if [ -n "$AGENT_FILTER" ]; then
+    declare -a FILTERED=()
+    for IMAGE_SPEC in "${IMAGES[@]}"; do
+        DOCKERFILE_NAME="${IMAGE_SPEC%:*}"
+        if [ "$DOCKERFILE_NAME" = "$AGENT_FILTER" ]; then
+            FILTERED+=("$IMAGE_SPEC")
+        fi
+    done
+    if [ ${#FILTERED[@]} -eq 0 ]; then
+        echo -e "${YELLOW}Error: unknown agent '${AGENT_FILTER}'. Expected one of: orchestrator, health_agent, diagnosis_agent${NC}"
+        exit 1
+    fi
+    IMAGES=("${FILTERED[@]}")
+fi
 
 BUILT_IMAGES=()
 FAILED_IMAGES=()
@@ -52,9 +84,9 @@ for IMAGE_SPEC in "${IMAGES[@]}"; do
         -t "${ECR_NAME}:arm64" \
         --load \
         .; then
-        docker tag "${ECR_NAME}:arm64" "${REGISTRY}/${ECR_NAME}:latest"
+        docker tag "${ECR_NAME}:arm64" "${REGISTRY}/${ECR_NAME}:${TAG}"
         BUILT_IMAGES+=("$ECR_NAME")
-        echo -e "${GREEN}Built and tagged: ${REGISTRY}/${ECR_NAME}:latest${NC}"
+        echo -e "${GREEN}Built and tagged: ${REGISTRY}/${ECR_NAME}:${TAG}${NC}"
     else
         FAILED_IMAGES+=("$ECR_NAME")
         echo -e "${YELLOW}Build failed: ${ECR_NAME}${NC}"
@@ -72,10 +104,10 @@ aws ecr get-login-password --region "$REGION" | docker login --username AWS --pa
 
 for IMAGE in "${BUILT_IMAGES[@]}"; do
     echo -e "${YELLOW}Pushing: ${IMAGE}${NC}"
-    docker push "${REGISTRY}/${IMAGE}:latest"
-    echo -e "${GREEN}Pushed: ${REGISTRY}/${IMAGE}:latest${NC}"
+    docker push "${REGISTRY}/${IMAGE}:${TAG}"
+    echo -e "${GREEN}Pushed: ${REGISTRY}/${IMAGE}:${TAG}${NC}"
 done
 
 echo ""
-echo -e "${GREEN}All images built and pushed.${NC}"
+echo -e "${GREEN}All images built and pushed with tag :${TAG}.${NC}"
 echo "Next: python3 scripts/deploy_to_agentcore_boto3.py --profile StandardAccess-${ACCOUNT_ID}"

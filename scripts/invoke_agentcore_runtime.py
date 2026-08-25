@@ -13,12 +13,15 @@ Usage:
     python scripts/invoke_agentcore_runtime.py orchestrator
     python scripts/invoke_agentcore_runtime.py orchestrator --payload '{"action": "list_devices"}'
 
-Runtime IDs are read from agent_endpoints.json (written by
-scripts/deploy_to_agentcore_boto3.py) unless overridden with --runtime-id.
+Runtime IDs are read from agent_endpoints.<TEAM_ID>.json (written by
+scripts/deploy_to_agentcore_boto3.py; TEAM_ID from .agentcore.env or --team-id),
+falling back to agent_endpoints.json (the original shared deployment) if no
+team-specific file exists. Use --runtime-id to override entirely.
 """
 
 import argparse
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -47,24 +50,31 @@ DEFAULT_PAYLOADS = {
 }
 
 
-def load_runtime_id(agent: str) -> str:
-    endpoints_file = Path(__file__).parent.parent / "agent_endpoints.json"
-    with open(endpoints_file) as f:
-        endpoints = json.load(f)
-    return endpoints["details"][agent]["runtime_id"]
+def load_runtime_id(agent: str, team_id: str = None) -> str:
+    root = Path(__file__).parent.parent
+    team_id = team_id or os.getenv('TEAM_ID', '').strip()
+    candidates = [root / f"agent_endpoints.{team_id}.json"] if team_id else []
+    candidates.append(root / "agent_endpoints.json")
+    for endpoints_file in candidates:
+        if endpoints_file.exists():
+            with open(endpoints_file) as f:
+                endpoints = json.load(f)
+            return endpoints["details"][agent]["runtime_id"]
+    raise FileNotFoundError(f"No agent_endpoints file found (looked for: {[str(c) for c in candidates]})")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("agent", choices=["health_agent", "diagnosis_agent", "orchestrator"])
     parser.add_argument("--payload", help="JSON payload to send (defaults to a sample reading for the chosen agent)")
-    parser.add_argument("--runtime-id", help="Override the runtime ID looked up from agent_endpoints.json")
+    parser.add_argument("--runtime-id", help="Override the runtime ID looked up from agent_endpoints.<team_id>.json")
+    parser.add_argument("--team-id", default=None, help="Team namespace (default: TEAM_ID from .agentcore.env)")
     parser.add_argument("--account-id", default="450410489798")
     parser.add_argument("--region", default="us-east-1")
     parser.add_argument("--profile", help="AWS SSO profile name (uses default credentials if omitted)")
     args = parser.parse_args()
 
-    runtime_id = args.runtime_id or load_runtime_id(args.agent)
+    runtime_id = args.runtime_id or load_runtime_id(args.agent, team_id=args.team_id)
     payload = json.loads(args.payload) if args.payload else DEFAULT_PAYLOADS[args.agent]
     session_id = f"smoketest-{args.agent}-{uuid.uuid4().hex}"
 

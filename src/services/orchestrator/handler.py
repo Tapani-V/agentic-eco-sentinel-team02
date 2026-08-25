@@ -26,6 +26,7 @@ Supported invocation payloads (dispatched via the optional "action" field):
 import asyncio
 import json
 import logging
+import os
 import boto3
 from typing import Dict, Any
 import sys
@@ -44,9 +45,14 @@ logger = logging.getLogger(__name__)
 app = BedrockAgentCoreApp()
 
 
-# Agent runtime IDs (from deployment)
-HEALTH_AGENT_RUNTIME_ID = 'health_agent_runtime-fAr31a5AEi'
-DIAGNOSIS_AGENT_RUNTIME_ID = 'diagnosis_agent_runtime-r8AcIc5zbG'
+# Agent runtime IDs (from deployment). Overridable via env vars so a
+# team-namespaced orchestrator deployment (see scripts/deploy_to_agentcore_boto3.py)
+# can point at its own team's health_agent/diagnosis_agent runtimes instead of
+# the shared ones - the hardcoded defaults below are the original shared
+# runtimes and are used whenever the env vars aren't set (no behavior change
+# for any existing deployment).
+HEALTH_AGENT_RUNTIME_ID = os.getenv('HEALTH_AGENT_RUNTIME_ID', 'health_agent_runtime-fAr31a5AEi')
+DIAGNOSIS_AGENT_RUNTIME_ID = os.getenv('DIAGNOSIS_AGENT_RUNTIME_ID', 'diagnosis_agent_runtime-r8AcIc5zbG')
 
 # Lazily initialized DeviceLoader (only needed for list_devices/get_device/get_device_summary)
 _device_loader = None

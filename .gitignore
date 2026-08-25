@@ -3,6 +3,11 @@
 .env.local
 .env.*.local
 .agentcore.env
+
+# Per-team AgentCore Runtime deployment output (agent_endpoints.json itself,
+# the original shared deployment's output, stays tracked)
+agent_endpoints.*.json
+
 # Virtual environment
 venv/
 ENV/

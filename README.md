@@ -54,12 +54,24 @@ and `.agentcore.env` (copy from `.agentcore.env.example` if you don't have one).
 ## Run on AWS Bedrock AgentCore Runtime
 
 Each agent (`health-agent`, `diagnosis-agent`, `orchestrator`) is deployed as its own
-AgentCore Runtime, built from `deployment/agentcore-runtime/<agent>.Dockerfile`.
+AgentCore Runtime, built from `deployment/agentcore-runtime/<agent>.Dockerfile`. Deploys
+are namespaced per team via `TEAM_ID` (set it in `.agentcore.env` first):
 
 ```bash
-./deployment/agentcore-runtime/build_and_push.sh          # build + push arm64 images to ECR
+./scripts/deploy_team_agents.sh   # build + push images, then register/update all 3 runtimes
+```
+
+Or run the two underlying steps yourself:
+```bash
+./deployment/agentcore-runtime/build_and_push.sh          # build + push arm64 images to ECR, tagged :$TEAM_ID
 python3 scripts/deploy_to_agentcore_boto3.py --profile <your-profile>   # register/update runtimes
 ```
+
+Unlike Docker Compose (separate ports per agent), every AgentCore Runtime container
+serves on **port 8080** — `BedrockAgentCoreApp` exposes `/ping` (health check) and
+`/invocations` (the actual invoke endpoint) there for all 3 agents. You don't call these
+ports directly though; use `scripts/invoke_agentcore_runtime.py` (below), which invokes
+the runtime through the `bedrock-agentcore` API rather than a raw HTTP request to 8080.
 
 ## Run the dashboard
 
@@ -94,6 +106,12 @@ docker-compose ps                      # all 3 containers should be "healthy"
 curl http://localhost:8000/health      # orchestrator
 curl http://localhost:8001/health      # health-agent
 curl http://localhost:8002/health      # diagnosis-agent
+```
+
+`tests/` runs on your host, not inside the containers, so set up a venv first if you
+haven't already:
+```bash
+python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest tests/ -v             # runs against the containers above
 python tests/test_e2e_all_stories.py   # exercises all 4 story scenarios end to end
 ```
@@ -104,8 +122,7 @@ working, not just the two agents talking to each other.
 ### 2. AWS Bedrock AgentCore Runtime
 
 ```bash
-./deployment/agentcore-runtime/build_and_push.sh
-python3 scripts/deploy_to_agentcore_boto3.py --profile <your-profile>   # writes agent_endpoints.json
+./scripts/deploy_team_agents.sh   # writes agent_endpoints.<TEAM_ID>.json
 
 # Invoke each deployed runtime directly to confirm the container/entrypoint works:
 python scripts/invoke_agentcore_runtime.py health_agent
@@ -140,48 +157,8 @@ AgentCore endpoints — see `src/dashboard/config.py`).
 | DiagnosisAgent logic + MCP tools | Same as above for `diagnosis_agent`; check the response's `tool_results`/`action_taken` fields are populated, not empty |
 | LangGraph routing | `tests/test_e2e_all_stories.py`'s 4 stories — healthy devices should **not** show diagnosis fields, warning/critical ones should |
 | AgentCore Gateway + Cognito | Any diagnosis call that reaches `get_spare_parts`/`schedule_maintenance`/`create_work_order` without an auth error |
-| DynamoDB writes | After a `schedule_maintenance` call, check the `agentic-maintenance-schedule` table in the AWS console for a new item |
+| DynamoDB writes | After a `schedule_maintenance` call, check the `maintenance_schedules` table in the AWS console for a new item |
 | Dashboard | Loads device list/health data from the orchestrator without errors in the browser console |
 | Docker Compose wiring | `docker-compose ps` shows all 3 containers healthy, `docker-compose logs -f` shows no crash loops |
 | AgentCore Runtime deployment | `agent_endpoints.json` has fresh runtime IDs after `deploy_to_agentcore_boto3.py`, and `invoke_agentcore_runtime.py` succeeds for all 3 agents |
 
-Yes — you should run both the local Docker Compose checks and (at least once) the
-AgentCore Runtime invocation checks before considering the branch verified, since they
-exercise different code paths (`app.py` vs `handler.py`) that share business logic but not
-transport code.
-
-
----
-
-## 📋 Tech Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Agents | Python + LangGraph |
-| API | FastAPI |
-| UI | React 18+ |
-| Tools (Fast) | AWS Lambda |
-| Tools (Complex) | ECS Fargate + GPT-4o LLM |
-| Auth | Cognito |
-| Memory | DynamoDB |
-| Gateway | AgentCore |
-| LLM | Azure OpenAI (GPT-4o) |
-
----
-
-## 🎯 Phase 1 vs Phase 2
-
-| Aspect | Phase 1 | Phase 2 |
-|--------|---------|---------|
-| Agents | Local Python | AWS Lambda/ECS (managed) |
-| Tool Access | Via AgentCore Gateway | Via AgentCore Gateway (same) |
-| Memory | DynamoDB (via Gateway) | DynamoDB (via Gateway) |
-| Identity | Cognito (via Gateway) | Cognito (via Gateway) |
-| API | FastAPI | API Gateway |
-| Scaling | ~20 req/sec | 1000+ req/sec |
-| Deployment | Python scripts | Terraform |
-| **Key difference** | **Agents run locally** | **Agents managed by AWS** |
-
----
-
-**Next:** Read [PHASE_1_ARCHITECTURE.md](docs/PHASE_1_ARCHITECTURE.md) and start Week 1!

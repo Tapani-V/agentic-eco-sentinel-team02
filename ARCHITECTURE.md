@@ -41,17 +41,30 @@ flowchart TD
     H -- MONITOR_ONLY --> K["no tool calls"]
 ```
 
-1. **Pattern match** — equipment-specific rules (`PUMP`/`MOTOR`/`COMPRESSOR`/`GENERATOR`)
-   match the anomaly list against known failure signatures, producing a `diagnosis`,
-   `confidence` (0.0–1.0), a recommended `action`, and a `severity`.
+1. **Pattern match** — each equipment type has its own method
+   (`_match_pump_patterns`/`_match_motor_patterns`/`_match_compressor_patterns`/
+   `_match_generator_patterns` in
+   [`src/agents/diagnosis_agent.py`](src/agents/diagnosis_agent.py)) that is just a
+   chain of `if`/`elif` checks against the anomaly strings. Each branch's confidence is
+   a **number someone typed in by hand**, not computed at runtime — e.g. this is the
+   actual PUMP logic:
+   ```python
+   if 'temperature_high' in anomaly and '98' in anomaly:
+       if 'vibration' in anomaly:
+           return {'diagnosis': 'Pump cavitation with bearing failure', 'confidence': 0.96, ...}
+   if 'vibration' in anomaly:
+       return {'diagnosis': 'Elevated vibration - possible wear', 'confidence': 0.72, ...}
+   return {'diagnosis': 'Minor anomalies detected', 'confidence': 0.60, ...}
+   ```
 2. **Critical escalation** — if `health_status == 'critical'`, the action is always
    force-escalated to `URGENT_REPAIR` regardless of the rule match (business rule: a
    critical reading always means an immediate work order).
 3. **LLM fallback** — only when `confidence < 0.85` *and* the device isn't critical, the
    rule's suggestion is sent to an LLM ([`src/llm/llm_client.py`](src/llm/llm_client.py),
-   Azure OpenAI) to verify/override the diagnosis, action, and confidence. High-confidence
-   rule matches skip the LLM call entirely (cost optimization, same idea as the `router`
-   node skipping DiagnosisAgent for healthy devices).
+   Amazon Bedrock `amazon.nova-lite-v1:0`) to verify/override the diagnosis, action, and
+   confidence. High-confidence rule matches skip the LLM call entirely (cost
+   optimization, same idea as the `router` node skipping DiagnosisAgent for healthy
+   devices).
 4. **Execute the action** — each `action` maps to a different set of real MCP tool calls
    via `GatewayClient`:
    - `URGENT_REPAIR` → `create-work-order` (emergency work order)
@@ -170,7 +183,7 @@ redeploy, or reconfigure any of them:
   |---|---|---|
   | `get-spare-parts` | AWS Lambda: [`tools/lambdas/get_spare_parts_handler.py`](tools/lambdas/get_spare_parts_handler.py) | Reads a static parts catalog from S3, seeded from [`data/mcp-tools/spare_parts_inventory.json`](data/mcp-tools/spare_parts_inventory.json) |
   | `schedule-maintenance` | AWS Lambda: [`tools/lambdas/schedule_maintenance_handler.py`](tools/lambdas/schedule_maintenance_handler.py) | Writes a new record to the DynamoDB `maintenance_schedules` table |
-  | `create-work-order` | App Runner/ECS FastAPI service: [`src/ecs_tasks/create_work_order/app.py`](src/ecs_tasks/create_work_order/app.py) (own `Dockerfile`, deployed via `scripts/deploy_create_work_order_apprunner.sh`/`_ecs.sh`) | Writes a new record to the DynamoDB `work_orders` table |
+  | `create-work-order` | App Runner FastAPI service: [`src/ecs_tasks/create_work_order/app.py`](src/ecs_tasks/create_work_order/app.py) (own `Dockerfile`, deployed via `scripts/deploy_create_work_order_apprunner.sh`) | Writes a new record to the DynamoDB `work_orders` table |
 
   `data/mcp-tools/` only contains `spare_parts_inventory.json` because `get-spare-parts`
   is the only tool that *queries* a fixed reference dataset — `schedule-maintenance` and
@@ -183,15 +196,3 @@ redeploy, or reconfigure any of them:
   tools above. There is no local/mock DynamoDB — local Docker Compose containers use
   your host's real AWS credentials (`~/.aws` mounted read-only) to hit the same tables
   AgentCore Runtime deployments use.
-
-Because all of the above is shared, real infrastructure, teams should namespace test data
-(e.g. a device-ID prefix) rather than assume isolated state per team.
-
-## What's intentionally not in this branch
-
-- **Memory service** — not wired into the live handlers upstream; excluded here rather
-  than half-finished.
-- **React dashboard** — the local Jinja2 + FastAPI dashboard (`src/dashboard/`) is the
-  only dashboard in this branch.
-- **CodeBuild deployment pipeline** — out of scope for now; `scripts/deploy_to_agentcore_boto3.py`
-  (direct boto3, no CodeBuild) is the supported path.
