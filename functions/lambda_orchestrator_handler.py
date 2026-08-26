@@ -141,7 +141,7 @@ def _invoke_orchestrator_runtime(payload: Dict[str, Any], session_prefix: str) -
     """
     try:
         # Agent runtime ID (from AgentCore deployment)
-        orchestrator_runtime_id = 'orchestrator_runtime-6UF3HDGyvL'
+        orchestrator_runtime_id = 'orchestrator_runtime_team01-he4Cv4Aeq1'
         
         # Get account ID
         sts = boto3.client('sts', region_name='us-east-1')

@@ -61,12 +61,9 @@ docker-compose up -d --build
 curl http://localhost:8000/health
 ```
 
-Docker Compose only installs dependencies **inside the containers** — anything you run
-directly on your host, like the `tests/` suite below, needs the venv you set up above
-(`source venv/bin/activate`):
-
+To connect the dashboard to this local orchestrator, run:
 ```bash
-python -m pytest tests/ -v
+ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
 ```
 
 This still talks to the same real, shared AWS resources as everyone else (Gateway, Lambda
@@ -124,6 +121,27 @@ time without overwriting each other (or the original shared runtimes):
 Both `scripts/deploy_to_agentcore_boto3.py` and `deployment/agentcore-runtime/build_and_push.sh`
 refuse to run if `TEAM_ID` isn't set — this is intentional so a forgotten `TEAM_ID` can never
 silently overwrite the shared runtime.
+
+### Connecting the dashboard to your Orchestrator AgentCore Runtime deployment
+
+1. Get your team's orchestrator runtime ID:
+   ```bash
+   python3 -c "import json; print(json.load(open('agent_endpoints.<TEAM_ID>.json'))['details']['orchestrator']['runtime_id'])"
+   ```
+2. Set it in `functions/lambda_orchestrator_handler.py` (~line 144):
+   ```python
+   orchestrator_runtime_id = '<runtime_id_from_step_1>'
+   ```
+3. Deploy your team's Lambda + API Gateway:
+   ```bash
+   export AWS_PROFILE=<your-profile>
+   python3 scripts/deploy_lambda_api_gateway_boto3.py
+   ```
+4. Point the dashboard at your team's API Gateway endpoint (printed by step 3) and run it:
+   ```bash
+   ORCHESTRATOR_URL=<your-team-api-gateway-url> python3 -m src.dashboard.app
+   ```
+   Open `http://localhost:8080`.
 
 ## LLM verification tier
 

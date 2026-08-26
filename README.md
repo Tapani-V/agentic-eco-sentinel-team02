@@ -53,6 +53,10 @@ and `.agentcore.env` (copy from `.agentcore.env.example` if you don't have one).
 
 ## Run on AWS Bedrock AgentCore Runtime
 
+This is only needed if you want your agents hosted on AWS instead of run locally — for
+day-to-day development, "Run locally (Docker Compose)" above (local orchestrator at
+`http://localhost:8000`) is enough and doesn't require any of this.
+
 Each agent (`health-agent`, `diagnosis-agent`, `orchestrator`) is deployed as its own
 AgentCore Runtime, built from `deployment/agentcore-runtime/<agent>.Dockerfile`. Deploys
 are namespaced per team via `TEAM_ID` (set it in `.agentcore.env` first):
@@ -80,6 +84,14 @@ cd src/dashboard
 pip install -r requirements.txt
 python app.py     # http://localhost:8080
 ```
+
+By default this points at the orchestrator's local port (`http://localhost:8000`) from
+"Run locally (Docker Compose)" above. To point it elsewhere, set `ORCHESTRATOR_URL`:
+```bash
+ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
+```
+To connect it to your team's AgentCore Runtime deployment instead, see
+[HACKATHON_README.md](HACKATHON_README.md#connecting-the-dashboard-to-your-orchestrator-agentcore-runtime-deployment).
 
 ## Tests
 
@@ -121,6 +133,8 @@ working, not just the two agents talking to each other.
 
 ### 2. AWS Bedrock AgentCore Runtime
 
+Optional — skip this if step 1's local Docker Compose orchestrator is all you need.
+
 ```bash
 ./scripts/deploy_team_agents.sh   # writes agent_endpoints.<TEAM_ID>.json
 
@@ -147,7 +161,13 @@ itself). Never work around this with `verify=False`.
 cd src/dashboard && python app.py   # http://localhost:8080
 ```
 Requires the orchestrator to be reachable (local on :8000, or point it at deployed
-AgentCore endpoints — see `src/dashboard/config.py`).
+AgentCore endpoints — see `src/dashboard/config.py`). To connect it to the local
+Docker Compose orchestrator explicitly:
+```bash
+ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
+```
+To connect it to your team's AgentCore Runtime deployment instead, see
+[HACKATHON_README.md](HACKATHON_README.md#connecting-the-dashboard-to-your-orchestrator-agentcore-runtime-deployment).
 
 ### What "working" means, component by component
 
