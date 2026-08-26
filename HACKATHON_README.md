@@ -35,6 +35,22 @@ scripts, and the tests all read credentials from `AWS_PROFILE`, never hardcoded 
 SSO sessions expire after a few hours; re-run `aws sso login` if you start seeing
 `ExpiredToken`/`UnauthorizedAccess` errors.
 
+> **Known issue (Linux/WSL):** Docker Compose mounts your real `~/.aws` folder
+> read-write into the containers so they can resolve the `AWS_PROFILE` SSO session.
+> Because containers run as `root`, a background SSO token refresh from inside a
+> container can leave a **root-owned** file under `~/.aws/sso/cache/`, which your
+> host `aws` CLI then can't read. Symptoms: `aws sts get-caller-identity`, `aws ecr
+> get-login-password`, or any AWS call on your host suddenly fails with a cryptic
+> error referencing a cache file hash (e.g. `password is empty`, or the hash printed
+> alone). If this happens: `ls -la ~/.aws/sso/cache/` to spot the file owned by
+> `root` (not you), then remove just that file and re-authenticate:
+> ```bash
+> rm ~/.aws/sso/cache/<hash>.json   # the one owned by root, not your user
+> aws sso login --profile <your-profile>
+> ```
+> This only clears a cached token — it's safe and doesn't affect any running
+> containers or AWS resources.
+
 ## How to run it (do this first)
 
 Use **Docker Compose** for day-to-day development — it's the fastest local loop for
@@ -79,8 +95,12 @@ time without overwriting each other (or the original shared runtimes):
    have one yet — everything else in it is the same shared config for everyone).
 2. Build, push, and register/update all 3 agents:
    ```bash
+   export AWS_PROFILE=<your-profile>
    ./scripts/deploy_team_agents.sh
    ```
+   The `export` is required — `build_and_push.sh`'s `aws ecr` calls read the profile
+   from the `AWS_PROFILE` environment variable (no `--profile` flag), so without it
+   they fall back to no profile at all and fail.
    This creates/updates runtimes named `<agent>_runtime_<TEAM_ID>` from images tagged
    `:<TEAM_ID>` in ECR — it never touches the shared `<agent>_runtime` runtimes or
    `:latest` images.
@@ -88,11 +108,17 @@ time without overwriting each other (or the original shared runtimes):
    ```bash
    ./scripts/deploy_team_agents.sh health_agent
    ```
-4. Smoke-test your deployment:
+4. Check your runtimes are `READY` (deployment can take a minute after the script exits):
+   ```bash
+   aws bedrock-agentcore-control list-agent-runtimes --region us-east-1 \
+     --query "agentRuntimes[?contains(agentRuntimeId, '<TEAM_ID>')].{Name:agentRuntimeId,Status:status,Updated:lastUpdatedAt}" \
+     --output table
+   ```
+5. Smoke-test your deployment (actually invokes the agent, not just a status check):
    ```bash
    python3 scripts/invoke_agentcore_runtime.py orchestrator
    ```
-5. Endpoints/runtime IDs are written to `agent_endpoints.<TEAM_ID>.json` (gitignored, not
+6. Endpoints/runtime IDs are written to `agent_endpoints.<TEAM_ID>.json` (gitignored, not
    the shared tracked `agent_endpoints.json`).
 
 Both `scripts/deploy_to_agentcore_boto3.py` and `deployment/agentcore-runtime/build_and_push.sh`

@@ -160,7 +160,7 @@ async def shutdown_event():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "app:app",
+        "src.dashboard.app:app",
         host=settings.DASHBOARD_HOST,
         port=settings.DASHBOARD_PORT,
         reload=settings.DEBUG,

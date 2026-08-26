@@ -21,9 +21,6 @@ langgraph>=0.0.20
 langchain>=0.1.0
 langchain-core>=0.1.0
 
-# LLM providers (for diagnosis verification)
-openai>=1.0.0  # Azure OpenAI SDK for LLMClient
-
 # FastAPI (for Phase 1 API - Week 2)
 fastapi>=0.100.0
 uvicorn>=0.20.0
