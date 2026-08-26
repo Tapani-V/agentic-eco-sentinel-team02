@@ -11,7 +11,7 @@ Parameters:
 
   OrchestratorUrl:
     Type: String
-    Default: https://mn6y8y0u26.execute-api.eu-central-1.amazonaws.com/prod/orchestrate
+    Default: https://smxdpw59j6.execute-api.eu-central-1.amazonaws.com/prod/orchestrate
     Description: URL of the orchestrator API Gateway endpoint
 
 Resources:

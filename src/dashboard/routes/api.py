@@ -22,6 +22,7 @@ import logging
 import httpx
 import ssl
 import asyncio
+import json
 from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
@@ -111,7 +112,7 @@ class OrchestratorClient:
     """Client for communicating with Orchestrator service"""
     
     def __init__(self, base_url: str, timeout: int = 300):  # 5 minutes for sequential requests
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip('/') if base_url else ''
         self.timeout = timeout
         self.logger = logging.getLogger('ORCHESTRATOR_CLIENT')
     
