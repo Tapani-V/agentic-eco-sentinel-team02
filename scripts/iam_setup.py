@@ -81,7 +81,7 @@ class IAMSetup:
     
     def create_agent_role(self) -> str:
         """Create role for local agent execution."""
-        role_name = "agentic-ai-agent-role"
+        role_name = "team01-agent-role"
         role_arn = self._create_role(role_name, "ec2.amazonaws.com")
         
         # Policy for agents to call AWS services
@@ -107,7 +107,7 @@ class IAMSetup:
                         "dynamodb:Query",
                         "dynamodb:Scan"
                     ],
-                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/agentic-ai-conversation-memory"
+                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/team01-conversation-memory"
                 },
                 {
                     "Effect": "Allow",
@@ -130,12 +130,12 @@ class IAMSetup:
             ]
         }
         
-        self._attach_policy(role_name, "agentic-ai-agent-policy", agent_policy)
+        self._attach_policy(role_name, "team01-agent-policy", agent_policy)
         return role_arn
     
     def create_lambda_execution_role(self) -> str:
         """Create role for Lambda tool execution."""
-        role_name = "agentic-ai-lambda-execution-role"
+        role_name = "team01-lambda-execution-role"
         role_arn = self._create_role(role_name, "lambda.amazonaws.com")
         
         # Policy for Lambda tools (basic + DynamoDB access)
@@ -158,24 +158,24 @@ class IAMSetup:
                         "dynamodb:Query",
                         "dynamodb:Scan"
                     ],
-                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/agentic-ai-conversation-memory"
+                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/team01-conversation-memory"
                 },
                 {
                     "Effect": "Allow",
                     "Action": [
                         "s3:GetObject"
                     ],
-                    "Resource": f"arn:aws:s3:::agentic-ai-data-*/*"
+                    "Resource": f"arn:aws:s3:::team01-*/*"
                 }
             ]
         }
         
-        self._attach_policy(role_name, "agentic-ai-lambda-policy", lambda_policy)
+        self._attach_policy(role_name, "team01-lambda-policy", lambda_policy)
         return role_arn
     
     def create_ecs_task_role(self) -> str:
         """Create role for ECS task execution (MCP-3, MCP-4)."""
-        role_name = "agentic-ai-ecs-task-role"
+        role_name = "team01-ecs-task-role"
         role_arn = self._create_role(role_name, "ecs-tasks.amazonaws.com")
         
         # Policy for ECS tasks (includes external API access)
@@ -198,7 +198,7 @@ class IAMSetup:
                         "dynamodb:Query",
                         "dynamodb:Scan"
                     ],
-                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/agentic-ai-conversation-memory"
+                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/team01-conversation-memory"
                 },
                 {
                     "Effect": "Allow",
@@ -206,7 +206,7 @@ class IAMSetup:
                         "secretsmanager:GetSecretValue"
                     ],
                     "Resource": [
-                        f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:agentic-ai/*"
+                        f"arn:aws:secretsmanager:{self.region}:{self.account_id}:secret:team01-*"
                     ]
                 },
                 {
@@ -215,12 +215,12 @@ class IAMSetup:
                         "s3:GetObject",
                         "s3:PutObject"
                     ],
-                    "Resource": f"arn:aws:s3:::agentic-ai-data-*/*"
+                    "Resource": f"arn:aws:s3:::team01-*/*"
                 }
             ]
         }
         
-        self._attach_policy(role_name, "agentic-ai-ecs-policy", ecs_policy)
+        self._attach_policy(role_name, "team01-ecs-policy", ecs_policy)
         return role_arn
     
     def setup_all_roles(self) -> Dict[str, str]:

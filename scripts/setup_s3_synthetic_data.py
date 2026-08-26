@@ -10,7 +10,7 @@ Purpose:
 
 Usage:
     python scripts/setup_s3_synthetic_data.py \
-      --bucket-name agentic-ai-poc-synthetic-data \
+      --bucket-name team01-synthetic-data \
       --data-dir data/generated \
       --profile StandardAccess-450410489798
 
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 class SyntheticDataS3Manager:
     """Manages S3 bucket creation and synthetic device data uploads"""
     
-    def __init__(self, bucket_name: str, region: str = 'us-east-1', profile: Optional[str] = None):
+    def __init__(self, bucket_name: str, region: str = 'eu-central-1', profile: Optional[str] = None):
         """Initialize S3 manager with boto3 session"""
         self.bucket_name = bucket_name
         self.region = region
@@ -201,12 +201,12 @@ S3 Structure:
   │   └── pump-*.json
 
 Configuration for .agentcore.env:
-  SYNTHETIC_DATA_BUCKET=agentic-ai-poc-synthetic-data
+  SYNTHETIC_DATA_BUCKET=team01-synthetic-data
   SYNTHETIC_DATA_PREFIX=devices/
 
 Access Pattern:
   Agents will load data via:
-  s3://agentic-ai-poc-synthetic-data/devices/device-id.json
+  s3://team01-synthetic-data/devices/device-id.json
 
 Versioning:  ✅ Enabled (can recover previous versions)
 
@@ -224,8 +224,8 @@ def main():
     )
     parser.add_argument(
         '--bucket-name',
-        default='agentic-ai-poc-synthetic-data',
-        help='S3 bucket name (default: agentic-ai-poc-synthetic-data)'
+        default='team01-synthetic-data',
+        help='S3 bucket name (default: team01-synthetic-data)'
     )
     parser.add_argument(
         '--data-dir',
@@ -234,7 +234,7 @@ def main():
     )
     parser.add_argument(
         '--region',
-        default='us-east-1',
+        default='eu-central-1',
         help='AWS region (default: us-east-1)'
     )
     parser.add_argument(

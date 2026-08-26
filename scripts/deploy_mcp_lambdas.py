@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 # Load .env
 load_dotenv()
 
-AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
+AWS_REGION = os.getenv('AWS_REGION', 'eu-central-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE')
 AWS_ACCOUNT_ID = os.getenv('AWS_ACCOUNT_ID')
 PERMISSION_BOUNDARY = os.getenv('PERMISSION_BOUNDARY')
@@ -44,22 +44,22 @@ else:
 # Lambda and IAM config
 LAMBDA_FUNCTIONS = [
     {
-        'name': 'get_spare_parts',
+        'name': 'team01-get-spare-parts',
         'handler': 'get_spare_parts_handler.lambda_handler',
         'filename': 'get_spare_parts_handler.py',
         'env': {
-            'MCP_TOOLS_BUCKET': 'agentic-ai-poc-3-1-mcp-tools',
+            'MCP_TOOLS_BUCKET': 'team01-mcp-tools',
         },
         'test_event': {
             "part_type": "bearing"
         }
     },
     {
-        'name': 'schedule_maintenance',
+        'name': 'team01-schedule-maintenance',
         'handler': 'schedule_maintenance_handler.lambda_handler',
         'filename': 'schedule_maintenance_handler.py',
         'env': {
-            'MAINTENANCE_TABLE': 'maintenance_schedules',
+            'MAINTENANCE_TABLE': 'team01-maintenance-schedules',
         },
         'test_event': {
             "device_id": "DEV-001",
@@ -68,7 +68,7 @@ LAMBDA_FUNCTIONS = [
         }
     }
 ]
-LAMBDA_ROLE_NAME = 'MCPToolsLambdaRole'
+LAMBDA_ROLE_NAME = 'team01-mcp-tools-lambda-role'
 LAMBDA_ASSUME_ROLE_POLICY = {
     "Version": "2012-10-17",
     "Statement": [
@@ -85,14 +85,14 @@ LAMBDA_POLICY = {
         {
             "Effect": "Allow",
             "Action": ["s3:GetObject"],
-            "Resource": ["arn:aws:s3:::agentic-ai-poc-3-1-mcp-tools/*"]
+            "Resource": ["arn:aws:s3:::team01-mcp-tools/*"]
         },
         {
             "Effect": "Allow",
             "Action": ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:GetItem", "dynamodb:Query"],
             "Resource": [
-                f"arn:aws:dynamodb:{AWS_REGION}:{AWS_ACCOUNT_ID}:table/maintenance_schedules",
-                f"arn:aws:dynamodb:{AWS_REGION}:{AWS_ACCOUNT_ID}:table/work_orders"
+                f"arn:aws:dynamodb:{AWS_REGION}:{AWS_ACCOUNT_ID}:table/team01-maintenance-schedules",
+                f"arn:aws:dynamodb:{AWS_REGION}:{AWS_ACCOUNT_ID}:table/team01-work-orders"
             ]
         },
         {
@@ -132,7 +132,7 @@ def ensure_iam_role(iam):
     # Attach policy
     iam.put_role_policy(
         RoleName=LAMBDA_ROLE_NAME,
-        PolicyName='MCPToolsLambdaPolicy',
+        PolicyName='team01-mcp-tools-lambda-policy',
         PolicyDocument=json.dumps(LAMBDA_POLICY)
     )
     return iam.get_role(RoleName=LAMBDA_ROLE_NAME)['Role']['Arn']

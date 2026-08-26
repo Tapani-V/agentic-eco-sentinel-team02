@@ -6,12 +6,12 @@ Description: >
 Parameters:
   ResourcePrefix:
     Type: String
-    Default: team1-
-    Description: Prefix for all resource names (e.g. team1-)
+    Default: team01-
+    Description: Prefix for all resource names (e.g. team01-)
 
   ApiGatewayDomain:
     Type: String
-    Default: 13fjttomdg.execute-api.eu-central-1.amazonaws.com
+    Default: c1x6zzdimf.execute-api.eu-central-1.amazonaws.com
     Description: Domain name of the HTTP API Gateway endpoint for the Dashboard API
 
   ApiGatewayStagePath:
