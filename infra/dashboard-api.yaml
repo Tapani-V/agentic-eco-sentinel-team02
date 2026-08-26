@@ -6,8 +6,8 @@ Description: >
 Parameters:
   ResourcePrefix:
     Type: String
-    Default: team1-
-    Description: Prefix for all resource names (e.g. team1-)
+    Default: team01-
+    Description: Prefix for all resource names (e.g. team01-)
 
   OrchestratorUrl:
     Type: String

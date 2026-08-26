@@ -106,7 +106,7 @@ def package_lambda_code():
 
 def create_lambda_function(lambda_client, account_id, env_vars, zip_content):
     """Create or update Lambda function"""
-    function_name = f"orchestrator-handler-{account_id}"
+    function_name = f"team01-orchestrator-handler"
     
     log(f"Creating/updating Lambda function: {function_name}...")
     
@@ -115,7 +115,7 @@ def create_lambda_function(lambda_client, account_id, env_vars, zip_content):
     
     # Try to find existing Lambda execution role
     role_arn = None
-    role_names = ['agentic-ai-lambda-execution-role', 'AgentCoreLambdaExecutionRole', 'agentcore-sample-lambdagateway-role']
+    role_names = ['team01-lambda-execution-role', 'AgentCoreLambdaExecutionRole', 'agentcore-sample-lambdagateway-role']
     
     for role_name in role_names:
         try:
@@ -210,7 +210,8 @@ def create_api_gateway(apigw_client, lambda_client, function_name):
     """Create API Gateway and wire to Lambda"""
     log("Setting up API Gateway...")
     
-    api_name = 'agentcore-orchestrator-api'
+    region = os.getenv('AWS_REGION', 'eu-central-1')
+    api_name = 'team01-orchestrator-api'
     
     # Check if API already exists
     apis = apigw_client.get_rest_apis()
@@ -280,8 +281,8 @@ def create_api_gateway(apigw_client, lambda_client, function_name):
     
     # Wire Lambda to POST method
     log("Wiring Lambda to POST method...")
-    account_id = boto3.client('sts').get_caller_identity()['Account']
-    lambda_arn = f"arn:aws:lambda:us-east-1:{account_id}:function:{function_name}"
+    region = os.getenv('AWS_REGION', 'eu-central-1'); account_id = boto3.client('sts', region_name=region).get_caller_identity()['Account']
+    lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{function_name}"
     
     try:
         apigw_client.put_integration(
@@ -290,7 +291,7 @@ def create_api_gateway(apigw_client, lambda_client, function_name):
             httpMethod='POST',
             type='AWS_PROXY',
             integrationHttpMethod='POST',
-            uri=f"arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
+            uri=f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
         )
         log("POST method wired to Lambda", 'success')
     except apigw_client.exceptions.ConflictException:
@@ -352,7 +353,7 @@ def create_api_gateway(apigw_client, lambda_client, function_name):
             StatementId=f"AllowAPIGateway-{api_id}",
             Action='lambda:InvokeFunction',
             Principal='apigateway.amazonaws.com',
-            SourceArn=f"arn:aws:execute-api:us-east-1:{account_id}:{api_id}/*"
+            SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*"
         )
         log("Lambda permission granted", 'success')
     except lambda_client.exceptions.ResourceConflictException:
@@ -381,7 +382,7 @@ def create_api_gateway(apigw_client, lambda_client, function_name):
         log(f"Unexpected deployment error: {e}", 'error')
         raise
     
-    endpoint = f"https://{api_id}.execute-api.us-east-1.amazonaws.com/prod/orchestrate"
+    endpoint = f"https://{api_id}.execute-api.{region}.amazonaws.com/prod/orchestrate"
     log(f"API Gateway ready: {endpoint}", 'success')
     
     return endpoint
@@ -398,13 +399,13 @@ def main():
     
     try:
         # Get AWS credentials
-        sts_client = boto3.client('sts')
+        region = os.getenv('AWS_REGION', 'eu-central-1'); sts_client = boto3.client('sts', region_name=region)
         account_id = sts_client.get_caller_identity()['Account']
         log(f"AWS Account: {account_id}", 'success')
         
         # Create clients
-        lambda_client = boto3.client('lambda')
-        apigw_client = boto3.client('apigateway')
+        lambda_client = boto3.client('lambda', region_name=region)
+        apigw_client = boto3.client('apigateway', region_name=region)
         
         # Deploy steps
         zip_content = package_lambda_code()

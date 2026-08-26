@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 class S3DataManager:
     """Manages S3 bucket creation and data uploads for MCP tools"""
     
-    def __init__(self, bucket_name: str, region: str = 'us-east-1'):
+    def __init__(self, bucket_name: str, region: str = 'eu-central-1'):
         self.bucket_name = bucket_name
         self.region = region
         self.s3_client = boto3.client('s3', region_name=region)
@@ -258,7 +258,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Create bucket and upload MCP tools data to us-east-1
+  # Create bucket and upload MCP tools data to eu-central-1
   python scripts/setup_s3_for_mcp_tools.py \
     --bucket-name agentic-ai-poc-3-1-mcp-tools \
     --data-dir data/mcp-tools
@@ -294,7 +294,7 @@ Examples:
     )
     parser.add_argument(
         '--region',
-        default='us-east-1',
+        default='eu-central-1',
         help='AWS region for bucket (default: us-east-1)'
     )
     parser.add_argument(

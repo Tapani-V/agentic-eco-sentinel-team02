@@ -31,7 +31,7 @@ from botocore.exceptions import ClientError
 
 # --- Configuration -----------------------------------------------------------
 
-RESOURCE_PREFIX = os.getenv("RESOURCE_PREFIX", "team1-")
+RESOURCE_PREFIX = os.getenv("RESOURCE_PREFIX", "team01-")
 STACK_NAME = f"{RESOURCE_PREFIX}dashboard"
 TEMPLATE_PATH = "infra/cloudfront-dashboard.yaml"
 FRONTEND_DIR = "frontend"

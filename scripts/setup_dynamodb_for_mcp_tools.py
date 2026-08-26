@@ -9,7 +9,7 @@ Purpose:
 - Configure tables with proper attributes and billing
 
 Usage:
-    python scripts/setup_dynamodb_for_mcp_tools.py --region us-east-1
+    python scripts/setup_dynamodb_for_mcp_tools.py --region eu-central-1
 
 This script:
 1. Creates maintenance_schedules table
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 class DynamoDBTableManager:
     """Manages DynamoDB table creation for MCP tools"""
     
-    def __init__(self, region: str = 'us-east-1'):
+    def __init__(self, region: str = 'eu-central-1'):
         self.region = region
         self.dynamodb_client = boto3.client('dynamodb', region_name=region)
         self.dynamodb_resource = boto3.resource('dynamodb', region_name=region)
@@ -59,7 +59,7 @@ class DynamoDBTableManager:
     
     def create_maintenance_schedules_table(self) -> bool:
         """Create maintenance_schedules table"""
-        table_name = 'maintenance_schedules'
+        table_name = 'team01-maintenance-schedules'
         
         if self.table_exists(table_name):
             logger.info(f"Table already exists, skipping creation")
@@ -111,7 +111,7 @@ class DynamoDBTableManager:
     
     def create_work_orders_table(self) -> bool:
         """Create work_orders table"""
-        table_name = 'work_orders'
+        table_name = 'team01-work-orders'
         
         if self.table_exists(table_name):
             logger.info(f"Table already exists, skipping creation")
@@ -203,8 +203,8 @@ class DynamoDBTableManager:
     
     def generate_summary(self) -> str:
         """Generate summary of DynamoDB setup"""
-        maintenance_info = self.get_table_info('maintenance_schedules')
-        work_orders_info = self.get_table_info('work_orders')
+        maintenance_info = self.get_table_info('team01-maintenance-schedules')
+        work_orders_info = self.get_table_info('team01-work-orders')
         
         summary = f"""
 DynamoDB Setup Summary
@@ -259,7 +259,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Create tables in us-east-1
+  # Create tables in eu-central-1
   python scripts/setup_dynamodb_for_mcp_tools.py
 
   # Use different region
@@ -275,7 +275,7 @@ Examples:
     
     parser.add_argument(
         '--region',
-        default='us-east-1',
+        default='eu-central-1',
         help='AWS region for tables (default: us-east-1)'
     )
     parser.add_argument(
