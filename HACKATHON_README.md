@@ -72,6 +72,19 @@ doesn't do is deploy anything to AWS Bedrock AgentCore Runtime (`deployment/agen
 — that's a separate, later step, covered in "Deploying to AgentCore Runtime" below, for when
 you want your agent hosted there instead of run locally.
 
+### Viewing logs (incl. LangGraph node execution)
+
+```bash
+docker-compose logs -f orchestrator      # follow logs for one service
+docker-compose logs -f                   # follow logs for all services
+```
+
+`src/graph/workflow.py` logs every LangGraph node transition at INFO level — look for
+`[NODE 1] HealthAgent`, `[NODE 2] Router`, `[NODE 3] DiagnosisAgent`, `[NODE 4] Aggregator`
+in the `orchestrator` service's logs to see exactly which nodes ran (and which were
+skipped) for a given request. `docker-compose.yml` already sets `LOG_LEVEL=INFO`, so no
+extra configuration is needed.
+
 ## Important: shared AWS resources — don't recreate, don't collide
 
 The AgentCore Gateway, MCP tools (Lambda + App Runner), Cognito, and DynamoDB tables are
