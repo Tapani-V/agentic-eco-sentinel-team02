@@ -1,0 +1,180 @@
+/* Maintenance panel — sub-tabs, summary cards, schedule/work-order/spare-parts rows */
+
+.maintenance-subtabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: var(--gap-lg);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.subtab-btn {
+  position: relative;
+  background: none;
+  border: none;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--surface-white);
+  cursor: pointer;
+  transition: color 0.2s;
+  white-space: nowrap;
+  opacity: 0.7;
+}
+
+.subtab-btn[aria-selected="true"] {
+  color: var(--surface-white);
+  border-bottom: 3px solid var(--primary-light);
+  opacity: 1;
+}
+
+.subtab-btn:hover {
+  opacity: 1;
+}
+
+/* Summary cards row */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--gap-md);
+  margin-bottom: var(--gap-lg);
+}
+
+.summary-card {
+  border-left: 3px solid var(--primary-blue);
+  padding: var(--gap-sm) var(--gap-md);
+  text-align: left;
+}
+
+.summary-card--red {
+  border-left-color: var(--state-critical);
+}
+
+.summary-card--red .summary-card__value {
+  color: var(--state-critical);
+}
+
+.summary-card--gold {
+  border-left-color: var(--warning-gold);
+}
+
+.summary-card--gold .summary-card__value {
+  color: var(--warning-gold);
+}
+
+.summary-card--cyan {
+  border-left-color: var(--accent-cyan);
+}
+
+.summary-card--cyan .summary-card__value {
+  color: var(--accent-cyan);
+}
+
+.summary-card--blue {
+  border-left-color: var(--primary-blue);
+}
+
+.summary-card--blue .summary-card__value {
+  color: var(--primary-blue);
+}
+
+.summary-card--default {
+  border-left-color: var(--primary-blue);
+}
+
+.summary-card--default .summary-card__value {
+  color: var(--primary-blue);
+}
+
+.summary-card__label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.summary-card__value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--primary-blue);
+}
+
+/* Schedule / work-order / spare-parts rows */
+.maintenance-row {
+  background: var(--surface-white);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  padding: var(--gap-md) var(--gap-lg);
+  margin-bottom: var(--gap-sm);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-sm) var(--gap-md);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.maintenance-row:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.maintenance-row__id {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.maintenance-row__badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.maintenance-row__badge--urgent {
+  background: var(--state-critical);
+  color: var(--surface-white);
+}
+
+.maintenance-row__badge--immediate {
+  background: var(--state-critical);
+  color: var(--surface-white);
+}
+
+.maintenance-row__badge--scheduled {
+  background: var(--secondary-teal);
+  color: var(--surface-white);
+}
+
+.maintenance-row__badge--in-stock {
+  background: var(--state-healthy);
+  color: var(--surface-white);
+}
+
+.maintenance-row__badge--on-order {
+  background: var(--state-warning);
+  color: var(--text-primary);
+}
+
+.maintenance-row__badge--unavailable {
+  background: var(--state-critical);
+  color: var(--surface-white);
+}
+
+.maintenance-row__field {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.maintenance-row__cost {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}

@@ -1,0 +1,50 @@
+/* Design tokens — single source of truth for all colour, shadow, and geometry values.
+   No hex literal should appear outside this file (enforced by Stylelint). */
+
+:root {
+  /* Primary palette */
+  --primary-blue: #1a3a70;
+  --primary-light: #2962cc;
+  --primary-dark: #0d2858;
+
+  /* Secondary / accent */
+  --secondary-teal: #0097a7;
+  --secondary-teal-dark: #00838f;
+  --accent-cyan: #00bcd4;
+  --warning-gold: #ffc107;
+
+  /* Status neutrals */
+  --status-gray: #37474f;
+  --status-slate: #455a64;
+
+  /* Background gradient stops */
+  --bg-gradient-1: #0d1f3c;
+  --bg-gradient-2: #1a3a5c;
+  --bg-gradient-3: rgba(13, 31, 60, 0.4);
+
+  /* Surfaces and text */
+  --bg-surface: #f5f7fa;
+  --surface-white: #ffffff;
+  --border-light: #dde5eb;
+  --text-primary: #1a1a1a;
+  --text-secondary: #424242;
+  --text-muted: #757575;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.18);
+
+  /* Semantic state tokens — replace the undefined --accent-green / --warning-amber / --critical-red */
+  --state-healthy: #4caf50;
+  --state-warning: #ffc107;
+  --state-critical: #f44336;
+
+  /* Shared geometry */
+  --radius-card: 12px;
+  --radius-header: 16px;
+  --gap-sm: 8px;
+  --gap-md: 16px;
+  --gap-lg: 24px;
+  --content-max: 1800px;
+}

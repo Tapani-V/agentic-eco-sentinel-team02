@@ -1,0 +1,75 @@
+/* Base styles — reset, body gradient, container, accessibility utilities */
+
+@import './tokens.css';
+
+/* Minimal reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: linear-gradient(
+    180deg,
+    var(--bg-gradient-1) 0%,
+    var(--bg-gradient-2) 50%,
+    var(--bg-gradient-3) 100%
+  );
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* Container — centred content with max-width */
+.container {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--gap-md);
+}
+
+/* Screen-reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Global focus-visible outline for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+/* Footer */
+.app-footer {
+  margin-top: var(--gap-lg);
+}
+
+.app-footer__inner {
+  background: var(--surface-white);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  padding: 12px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
