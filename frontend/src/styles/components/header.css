@@ -1,0 +1,118 @@
+/* Header component styles — gradient title, pulse live indicator, refresh controls */
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.app-header {
+  background: var(--surface-white);
+  border-radius: var(--radius-header);
+  box-shadow: var(--shadow-md);
+  padding: 32px;
+  margin-bottom: var(--gap-lg);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 32px;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header-title {
+  font-size: 2.8em;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -1px;
+  line-height: 1.1;
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, var(--primary-blue), var(--secondary-teal));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.header-subtitle {
+  font-size: 1.05em;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-left: 4.1em;
+  margin-top: 4px;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-hard-refresh,
+.btn-refresh {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 24px;
+  font-size: 0.95em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: var(--surface-white);
+  box-shadow: 0 4px 12px rgba(30, 64, 175, 0.3);
+}
+
+.btn-hard-refresh {
+  background: linear-gradient(135deg, #ff9800, #f57c00);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
+}
+
+.btn-hard-refresh:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 152, 0, 0.4);
+}
+
+.btn-hard-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-refresh {
+  background: linear-gradient(135deg, var(--primary-blue), var(--primary-light));
+}
+
+.btn-refresh:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(30, 64, 175, 0.4);
+}
+
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--state-healthy);
+}
+
+.live-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--state-healthy);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.freshness-indicator {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}

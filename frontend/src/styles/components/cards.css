@@ -1,0 +1,226 @@
+/* Card styles — base card, device grid, health bars, hover effects */
+
+.card {
+  background: var(--surface-white);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  padding: 24px;
+}
+
+.card__title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--gap-md);
+}
+
+/* Device card grid */
+.devices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.device-card {
+  background: var(--surface-white);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  padding: var(--gap-md);
+  border: 1px solid var(--border-light);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.device-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary-light);
+}
+
+.device-card__id {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.device-card__type {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  align-self: flex-start;
+}
+
+.device-card__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.device-card__status {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.device-card__health {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Health bar */
+.health-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-surface);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: var(--gap-sm) 0;
+}
+
+.health-bar__fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.health-bar__fill--healthy {
+  background: linear-gradient(90deg, var(--accent-cyan), var(--secondary-teal));
+}
+
+.health-bar__fill--warning {
+  background: linear-gradient(90deg, var(--warning-gold), var(--state-warning));
+}
+
+.health-bar__fill--critical {
+  background: linear-gradient(90deg, var(--status-gray), var(--status-slate));
+}
+
+.health-bar__fill--unknown {
+  background: var(--border-light);
+}
+
+/* Overview grid (two-column) */
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-lg);
+}
+
+/* Chart container */
+.chart-container {
+  height: 300px;
+  position: relative;
+}
+
+
+/* Analytics panel */
+.analytics-panel__title {
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--primary-blue);
+  margin-bottom: var(--gap-lg);
+}
+
+.analytics-distribution {
+  background: var(--bg-surface);
+  border-radius: var(--radius-card);
+  padding: var(--gap-md) var(--gap-lg);
+  margin-top: var(--gap-md);
+}
+
+.analytics-distribution__title {
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--gap-md);
+}
+
+.analytics-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--gap-md);
+}
+
+.analytics-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--gap-sm) var(--gap-md);
+  border: 2px solid var(--primary-light);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.analytics-tile__type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--primary-blue);
+}
+
+.analytics-tile__count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+/* Async region loading/error container — white card surface */
+.async-region-loading {
+  background: var(--surface-white);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  padding: 48px 24px;
+  text-align: center;
+}
+
+/* Memory indicators on device cards */
+.device-card__memory {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.8rem;
+}
+
+.memory-badge {
+  background: var(--bg-surface, #2a2a2a);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-secondary, #999);
+}
+
+.memory-trend {
+  font-weight: 600;
+}
+
+.memory-trend--improving {
+  color: var(--status-healthy, #4caf50);
+}
+
+.memory-trend--stable {
+  color: var(--text-muted, #666);
+}
+
+.memory-trend--worsening {
+  color: var(--status-critical, #f44336);
+}
+
+.memory-recurring {
+  background: var(--alert-gold, rgba(255, 193, 7, 0.15));
+  color: var(--alert-gold-text, #ffc107);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}

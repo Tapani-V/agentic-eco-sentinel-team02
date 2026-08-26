@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFront distribution with S3 origin for the Eco-Sentinel React dashboard.
+  Static assets are served via OAC; API calls are proxied to API Gateway.
+
+Parameters:
+  ResourcePrefix:
+    Type: String
+    Default: team1-
+    Description: Prefix for all resource names (e.g. team1-)
+
+  ApiGatewayDomain:
+    Type: String
+    Default: 13fjttomdg.execute-api.eu-central-1.amazonaws.com
+    Description: Domain name of the HTTP API Gateway endpoint for the Dashboard API
+
+  ApiGatewayStagePath:
+    Type: String
+    Default: ''
+    Description: Stage path prefix for the API Gateway origin (empty for HTTP API $default stage)
+
+Resources:
+  DashboardBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${ResourcePrefix}dashboard-oac'
+        Description: OAC for dashboard S3 bucket
+        SigningProtocol: sigv4
+        SigningBehavior: always
+        OriginAccessControlOriginType: s3
+
+  DashboardDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Comment: !Sub '${ResourcePrefix}dashboard - Eco-Sentinel React Dashboard'
+        HttpVersion: http2
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt DashboardBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+          - Id: ApiGatewayOrigin
+            DomainName: !Ref ApiGatewayDomain
+            OriginPath: !Ref ApiGatewayStagePath
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              HTTPSPort: 443
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: ApiGatewayOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            Compress: true
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+
+Outputs:
+  DistributionDomainName:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt DashboardDistribution.DomainName
+
+  DistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref DashboardDistribution
+
+  BucketName:
+    Description: S3 bucket name for dashboard assets
+    Value: !Ref DashboardBucket
