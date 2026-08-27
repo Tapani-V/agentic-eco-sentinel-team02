@@ -110,7 +110,7 @@ async def fleet_summary():
             state = d.get("health_state", "").lower()
             if state in ("healthy", "normal", "good"):
                 healthy += 1
-            elif state in ("warning", "degraded"):
+            elif state in ("warning", "degraded", "alert"):
                 warning += 1
             elif state in ("critical", "failure", "failed"):
                 critical += 1
@@ -164,7 +164,7 @@ async def get_alerts(severity: Optional[str] = None, skip: int = 0, limit: int =
                 "timestamp": d.get("timestamp"),
                 "action_required": True,
             })
-        elif state == "warning" or state == "degraded":
+        elif state in ("warning", "degraded", "alert"):
             alerts.append({
                 "id": f"alert-{device_id}-warning",
                 "device_id": device_id,
@@ -215,7 +215,7 @@ async def get_maintenance_schedule():
                 "estimated_cost": 2500.0,
                 "parts_needed": [f"{equip.lower()}-repair-kit"],
             })
-        elif state in ("warning", "degraded"):
+        elif state in ("warning", "degraded", "alert"):
             schedules.append({
                 "device_id": device_id,
                 "priority": "scheduled",
@@ -269,7 +269,7 @@ async def get_work_orders(status: Optional[str] = None, skip: int = 0, limit: in
                 "created_at": datetime.utcnow().isoformat(),
                 "status": "open",
             })
-        elif state in ("warning", "degraded"):
+        elif state in ("warning", "degraded", "alert"):
             work_orders.append({
                 "work_order_id": f"WO-{device_id}",
                 "device_id": device_id,
