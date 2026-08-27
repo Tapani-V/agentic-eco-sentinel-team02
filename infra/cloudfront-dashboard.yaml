@@ -11,12 +11,12 @@ Parameters:
 
   ApiGatewayDomain:
     Type: String
-    Default: c1x6zzdimf.execute-api.eu-central-1.amazonaws.com
+    Default: smxdpw59j6.execute-api.eu-central-1.amazonaws.com
     Description: Domain name of the HTTP API Gateway endpoint for the Dashboard API
 
   ApiGatewayStagePath:
     Type: String
-    Default: ''
+    Default: '/prod'
     Description: Stage path prefix for the API Gateway origin (empty for HTTP API $default stage)
 
 Resources:

@@ -1,28 +1,5 @@
 {
-  "timestamp": "2026-08-11T21:12:50.482717",
-  "region": "us-east-1",
-  "account_id": "450410489798",
-  "memory": {
-    "memory_id": "agentic_eco_sentinel_memory-b9oakkF6FK",
-    "memory_name": "agentic_eco_sentinel_memory",
-    "event_expiry_days": 90,
-    "namespaces": [
-      "device_facts",
-      "diagnosis_history",
-      "maintenance_actions",
-      "session_context"
-    ]
-  },
-  "iam": {
-    "policy_arn": "arn:aws:iam::450410489798:policy/agentcore-memory-access-policy",
-    "policy_name": "agentcore-memory-access-policy",
-    "attached_to_role": "AgentCoreExecutionRole"
-  },
-  "env_var": {
-    "AGENTCORE_MEMORY_ID": "agentic_eco_sentinel_memory-b9oakkF6FK"
-  },
-  "instructions": {
-    "local_dev": "Add AGENTCORE_MEMORY_ID=agentic_eco_sentinel_memory-b9oakkF6FK to your .agentcore.env file",
-    "agentcore_runtime": "The AGENTCORE_MEMORY_ID env var has been set on all agent runtimes"
-  }
+  "memory_id": "team01_eco_sentinel_memory-s0nrWx550P",
+  "policy_arn": "arn:aws:iam::450410489798:policy/team01-memory-access-policy",
+  "region": "eu-central-1"
 }

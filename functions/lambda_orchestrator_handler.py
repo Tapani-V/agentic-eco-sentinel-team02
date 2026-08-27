@@ -141,10 +141,11 @@ def _invoke_orchestrator_runtime(payload: Dict[str, Any], session_prefix: str) -
     """
     try:
         # Agent runtime ID (from AgentCore deployment)
-        orchestrator_runtime_id = 'orchestrator_runtime_team01-he4Cv4Aeq1'
+        orchestrator_runtime_id = os.getenv('ORCHESTRATOR_RUNTIME_ID', 'orchestrator_runtime_team01-2mBWLh67eI')
         
         # Get account ID
-        sts = boto3.client('sts', region_name='us-east-1')
+        region = os.getenv('AWS_REGION_NAME', os.getenv('AWS_REGION', 'eu-central-1'))
+        sts = boto3.client('sts', region_name=region)
         account_id = sts.get_caller_identity()['Account']
         
         log_info(f"Invoking OrchestratorAgent", {
@@ -153,7 +154,7 @@ def _invoke_orchestrator_runtime(payload: Dict[str, Any], session_prefix: str) -
         })
         
         # Construct ARN for orchestrator agent
-        agent_runtime_arn = f"arn:aws:bedrock-agentcore:us-east-1:{account_id}:runtime/{orchestrator_runtime_id}"
+        agent_runtime_arn = f"arn:aws:bedrock-agentcore:{region}:{account_id}:runtime/{orchestrator_runtime_id}"
         
         # Generate session ID (must be >= 33 chars). Pad short prefixes (e.g.
         # action names like "health" with no device_id) so the total length
@@ -168,7 +169,7 @@ def _invoke_orchestrator_runtime(payload: Dict[str, Any], session_prefix: str) -
         })
         
         # Create client and invoke via AgentCore Runtime
-        agentcore_client = boto3.client('bedrock-agentcore', region_name='us-east-1')
+        agentcore_client = boto3.client('bedrock-agentcore', region_name=region)
         response = agentcore_client.invoke_agent_runtime(
             agentRuntimeArn=agent_runtime_arn,
             runtimeSessionId=session_id,
