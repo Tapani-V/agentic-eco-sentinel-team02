@@ -352,18 +352,17 @@ def handle_get_request(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def handle_fleet_summary() -> Dict[str, Any]:
     """
-    Build fleet summary by calling the orchestrator for device list,
-    then returning aggregated KPIs.
+    Build fleet summary by calling the orchestrator for device list (with health data),
+    then aggregating KPIs.
     """
     log_info("Fleet summary requested — fetching device list from orchestrator")
     
-    # Get devices from orchestrator
+    # Get devices from orchestrator (now includes health_state per device)
     devices_result = invoke_orchestrator_action(action='list_devices')
     
-    device_ids = []
+    devices = []
     if isinstance(devices_result, dict):
-        log_info(f"Orchestrator list_devices result keys: {list(devices_result.keys())}")
-        # The agent may return {statusCode: 200, body: {total, devices}} or {total, devices} directly
+        # Handle {statusCode, body} wrapping from agent
         if 'body' in devices_result:
             body = devices_result['body']
             if isinstance(body, str):
@@ -372,30 +371,43 @@ def handle_fleet_summary() -> Dict[str, Any]:
                 except:
                     pass
             if isinstance(body, dict):
-                device_ids = body.get('devices', [])
+                devices = body.get('devices', [])
             elif isinstance(body, list):
-                device_ids = body
+                devices = body
         else:
-            device_ids = devices_result.get('devices', [])
+            devices = devices_result.get('devices', [])
     
-    total = len(device_ids)
+    total = len(devices)
+    healthy = 0
+    warning = 0
+    critical = 0
+    
+    for d in devices:
+        if isinstance(d, dict):
+            state = d.get('health_state', '').lower()
+            if state in ('healthy', 'normal', 'good'):
+                healthy += 1
+            elif state in ('warning', 'degraded'):
+                warning += 1
+            elif state in ('critical', 'failure', 'failed'):
+                critical += 1
     
     summary = {
         'timestamp': datetime.now().isoformat(),
         'total_devices': total,
-        'healthy_devices': total,  # Default: assume healthy until agent analyzes
-        'warning_devices': 0,
-        'critical_devices': 0,
-        'fleet_health_percent': 100 if total else 0,
+        'healthy_devices': healthy,
+        'warning_devices': warning,
+        'critical_devices': critical,
+        'fleet_health_percent': round((healthy / total * 100) if total else 0),
         'degradation_trend': 'stable',
-        'devices_list': [{'device_id': d} if isinstance(d, str) else d for d in device_ids],
-        '_problematic_devices': [],
+        'devices_list': devices,
+        '_problematic_devices': [d for d in devices if isinstance(d, dict) and d.get('health_state', '').lower() not in ('healthy', 'normal', 'good', '')],
         'work_orders': [],
         'maintenance_schedules': [],
         'spare_parts': [],
     }
     
-    log_info(f"Fleet summary: {total} devices")
+    log_info(f"Fleet summary: {total} devices, {healthy} healthy, {warning} warning, {critical} critical")
     return create_response(200, summary)
 
 
