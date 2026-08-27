@@ -177,7 +177,21 @@ def invoke(payload: Dict[str, Any]) -> Dict[str, Any]:
         
         # ---- action: list_devices ----
         if action == 'list_devices':
-            devices = _get_device_loader().list_available_devices()
+            loader = _get_device_loader()
+            device_ids = loader.list_available_devices()
+            devices = []
+            for did in device_ids:
+                status = loader.get_device_status(did)
+                if status:
+                    devices.append({
+                        'device_id': status.get('device_id', did),
+                        'equipment_type': status.get('equipment_type', 'UNKNOWN'),
+                        'health_state': status.get('health_state', 'unknown'),
+                        'degradation_score': status.get('degradation_score', 0),
+                        'timestamp': status.get('timestamp', ''),
+                    })
+                else:
+                    devices.append({'device_id': did})
             return {
                 'statusCode': 200,
                 'body': {'total': len(devices), 'devices': devices}

@@ -352,16 +352,17 @@ def handle_get_request(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def handle_fleet_summary() -> Dict[str, Any]:
     """
-    Build fleet summary by calling the orchestrator for device list,
-    then fetching each device's health via get_device_summary in parallel.
+    Build fleet summary by calling the orchestrator for device list (with health data),
+    then aggregating KPIs.
     """
     log_info("Fleet summary requested — fetching device list from orchestrator")
     
-    # Step 1: Get device IDs from orchestrator
+    # Get devices from orchestrator (now includes health_state per device)
     devices_result = invoke_orchestrator_action(action='list_devices')
     
-    device_ids = []
+    devices = []
     if isinstance(devices_result, dict):
+        # Handle {statusCode, body} wrapping from agent
         if 'body' in devices_result:
             body = devices_result['body']
             if isinstance(body, str):
@@ -370,43 +371,12 @@ def handle_fleet_summary() -> Dict[str, Any]:
                 except:
                     pass
             if isinstance(body, dict):
-                device_ids = body.get('devices', [])
+                devices = body.get('devices', [])
             elif isinstance(body, list):
-                device_ids = body
+                devices = body
         else:
-            device_ids = devices_result.get('devices', [])
+            devices = devices_result.get('devices', [])
     
-    log_info(f"Got {len(device_ids)} device IDs, fetching summaries in parallel...")
-    
-    # Step 2: Fetch health data for each device in parallel
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    
-    def fetch_device(did):
-        if not isinstance(did, str):
-            return did
-        try:
-            detail = invoke_orchestrator_action(action='get_device_summary', device_id=did)
-            if isinstance(detail, dict) and 'error' not in detail:
-                body = detail.get('body', detail)
-                if isinstance(body, str):
-                    try:
-                        body = json.loads(body)
-                    except:
-                        pass
-                if isinstance(body, dict):
-                    body.setdefault('device_id', did)
-                    return body
-        except:
-            pass
-        return {'device_id': did}
-    
-    devices = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(fetch_device, did): did for did in device_ids}
-        for future in as_completed(futures):
-            devices.append(future.result())
-    
-    # Step 3: Aggregate health KPIs
     total = len(devices)
     healthy = 0
     warning = 0
@@ -414,7 +384,7 @@ def handle_fleet_summary() -> Dict[str, Any]:
     
     for d in devices:
         if isinstance(d, dict):
-            state = d.get('current_health', d.get('health_state', '')).lower()
+            state = d.get('health_state', '').lower()
             if state in ('healthy', 'normal', 'good'):
                 healthy += 1
             elif state in ('warning', 'degraded'):
@@ -431,7 +401,7 @@ def handle_fleet_summary() -> Dict[str, Any]:
         'fleet_health_percent': round((healthy / total * 100) if total else 0),
         'degradation_trend': 'stable',
         'devices_list': devices,
-        '_problematic_devices': [d for d in devices if isinstance(d, dict) and d.get('current_health', d.get('health_state', '')).lower() not in ('healthy', 'normal', 'good', '')],
+        '_problematic_devices': [d for d in devices if isinstance(d, dict) and d.get('health_state', '').lower() not in ('healthy', 'normal', 'good', '')],
         'work_orders': [],
         'maintenance_schedules': [],
         'spare_parts': [],
