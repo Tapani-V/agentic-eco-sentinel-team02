@@ -84,12 +84,12 @@ def _get_workflow():
     global _workflow
     if _workflow is None:
         from src.graph.workflow_agentcore import AgentCoreworkflow
-        account_id = boto3.client('sts', region_name='us-east-1').get_caller_identity()['Account']
+        account_id = boto3.client('sts', region_name='eu-central-1').get_caller_identity()['Account']
         _workflow = AgentCoreworkflow(
             health_agent_runtime_id=HEALTH_AGENT_RUNTIME_ID,
             diagnosis_agent_runtime_id=DIAGNOSIS_AGENT_RUNTIME_ID,
             account_id=account_id,
-            region='us-east-1'
+            region='eu-central-1'
         )
     return _workflow
 

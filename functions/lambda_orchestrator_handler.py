@@ -301,40 +301,29 @@ def handle_get_request(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Route GET requests to the appropriate OrchestratorAgent "action" payload.
     
-    Supported routes:
-        GET /health                              -> action=health
-        GET /devices                             -> action=list_devices
-        GET /devices/{device_id}                 -> action=get_device
-        GET /devices/{device_id}/summary         -> action=get_device_summary
-        GET /fleet-summary                       -> aggregated fleet KPIs
+    Supported routes (created as children of /orchestrate in API Gateway,
+    matching the dashboard's OrchestratorClient which builds URLs as
+    f"{ORCHESTRATOR_URL}{endpoint}"):
+        GET /orchestrate/health                     -> action=health
+        GET /orchestrate/devices                    -> action=list_devices
+        GET /orchestrate/devices/{device_id}         -> action=get_device
+        GET /orchestrate/devices/{device_id}/summary -> action=get_device_summary
     """
     path_params = event.get('pathParameters') or {}
-    device_id = path_params.get('device_id') or path_params.get('proxy', '')
-    path = event.get('path') or ''
+    device_id = path_params.get('device_id')
+    resource = event.get('resource') or event.get('path') or ''
     
-    # Strip /api prefix from CloudFront routing
-    if '/api/' in path:
-        path = path.split('/api')[-1]
-    
-    if path.endswith('/health'):
+    if resource.endswith('/health'):
         action = 'health'
-    elif 'fleet-summary' in path:
-        return handle_fleet_summary()
-    elif path.endswith('/summary'):
+    elif resource.endswith('/summary'):
         action = 'get_device_summary'
-    elif '/devices/' in path:
-        # Extract device_id from path: /devices/motor-001
-        parts = path.split('/devices/')
-        if len(parts) > 1:
-            device_id = parts[1].split('/')[0]
+    elif device_id:
         action = 'get_device'
-    elif path.endswith('/devices'):
-        action = 'list_devices'
     else:
         action = 'list_devices'
     
     log_info(f"GET request routed to action '{action}'", {
-        'path': path,
+        'resource': resource,
         'device_id': device_id
     })
     
@@ -348,67 +337,6 @@ def handle_get_request(event: Dict[str, Any]) -> Dict[str, Any]:
     status_code = agent_result.get('statusCode', 200)
     body = agent_result.get('body', agent_result)
     return create_response(status_code, body)
-
-
-def handle_fleet_summary() -> Dict[str, Any]:
-    """
-    Build fleet summary by calling the orchestrator for device list (with health data),
-    then aggregating KPIs.
-    """
-    log_info("Fleet summary requested — fetching device list from orchestrator")
-    
-    # Get devices from orchestrator (now includes health_state per device)
-    devices_result = invoke_orchestrator_action(action='list_devices')
-    
-    devices = []
-    if isinstance(devices_result, dict):
-        # Handle {statusCode, body} wrapping from agent
-        if 'body' in devices_result:
-            body = devices_result['body']
-            if isinstance(body, str):
-                try:
-                    body = json.loads(body)
-                except:
-                    pass
-            if isinstance(body, dict):
-                devices = body.get('devices', [])
-            elif isinstance(body, list):
-                devices = body
-        else:
-            devices = devices_result.get('devices', [])
-    
-    total = len(devices)
-    healthy = 0
-    warning = 0
-    critical = 0
-    
-    for d in devices:
-        if isinstance(d, dict):
-            state = d.get('health_state', '').lower()
-            if state in ('healthy', 'normal', 'good'):
-                healthy += 1
-            elif state in ('warning', 'degraded'):
-                warning += 1
-            elif state in ('critical', 'failure', 'failed'):
-                critical += 1
-    
-    summary = {
-        'timestamp': datetime.now().isoformat(),
-        'total_devices': total,
-        'healthy_devices': healthy,
-        'warning_devices': warning,
-        'critical_devices': critical,
-        'fleet_health_percent': round((healthy / total * 100) if total else 0),
-        'degradation_trend': 'stable',
-        'devices_list': devices,
-        '_problematic_devices': [d for d in devices if isinstance(d, dict) and d.get('health_state', '').lower() not in ('healthy', 'normal', 'good', '')],
-        'work_orders': [],
-        'maintenance_schedules': [],
-        'spare_parts': [],
-    }
-    
-    log_info(f"Fleet summary: {total} devices, {healthy} healthy, {warning} warning, {critical} critical")
-    return create_response(200, summary)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
