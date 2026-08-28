@@ -46,8 +46,10 @@ class Settings(BaseSettings):
     # ========================================
     # Orchestrator Service Connection
     # ========================================
-    # Points to API Gateway endpoint which proxies to Lambda -> Orchestrator
-    ORCHESTRATOR_URL: str = os.getenv("ORCHESTRATOR_URL", "https://mn6y8y0u26.execute-api.us-east-1.amazonaws.com/prod/orchestrate")
+    # Points to the API Gateway stage root (Frankfurt), which proxies to the
+    # Lambda -> Orchestrator AgentCore Runtime. No /orchestrate suffix - the
+    # Lambda's routes are flat (/devices, /health, ...), confirmed via live testing.
+    ORCHESTRATOR_URL: str = os.getenv("ORCHESTRATOR_URL", "https://smxdpw59j6.execute-api.eu-central-1.amazonaws.com/prod")
     ORCHESTRATOR_TIMEOUT: int = int(os.getenv("ORCHESTRATOR_TIMEOUT", "30"))
     
     # ========================================

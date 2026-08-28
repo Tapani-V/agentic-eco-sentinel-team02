@@ -251,3 +251,68 @@ No reliable "reset button":
 
 Since the live config drifted from any deploy script, there's no confident way to tear down and recreate it if something breaks mid-hackathon — a participant could get stuck without AWS console expertise.
 So my view holds: even post-fix, the CloudFront path adds real friction for anyone other than someone deeply familiar with this specific AWS setup. The local dashboard (same real agents/backend, simpler frontend loop) is the safer choice for a time-boxed hackathon with multiple participants.
+
+---
+
+## 9. Implementation log — fabricated-data fix (branch `event/hackathon-team01-cloudfront-dashboard-fix`)
+
+Applied on top of `event/hackathon-team01`, keeping the one-Lambda/two-file split
+from section 7 (no new infrastructure).
+
+### Code changes
+
+- **`functions/api_gateway_handler.py`**
+  - Added `_get_analyzed_devices()`: calls `action="get_device"` (the real
+    HealthAgent → DiagnosisAgent workflow) once per device and caches the results
+    in-memory for 300s (module-level, survives warm Lambda re-invocations) — avoids
+    re-running the full agent workflow for every dashboard poll.
+  - Added `extract_work_orders()`, `extract_maintenance_schedules()`,
+    `extract_spare_parts()` — ported from `src/dashboard/routes/api.py` so both
+    frontends read `tool_results` the same way.
+  - Rewrote `/work-orders`, `/maintenance-schedule`, `/alerts` to build their
+    responses from `_get_analyzed_devices()` + the extractors above, instead of
+    fabricating values from the pre-baked `health_state` label.
+  - `/fleet-summary` now populates `work_orders`/`maintenance_schedules`/
+    `spare_parts` from the same cached analysis instead of hardcoded empty lists,
+    while still using the fast `list_devices` path for health counts.
+  - `/cache-clear` now actually invalidates `_ANALYSIS_CACHE` before recomputing.
+  - Removed a duplicate `POST /orchestrate` route registration and the unused
+    `parse_api_gateway_event` import.
+- **`functions/lambda_orchestrator_handler.py`**
+  - Removed dead code: `lambda_handler`, `handle_get_request`, `create_response`,
+    `parse_api_gateway_event`, and the `__main__` test block — none of these were
+    reachable anymore since `api_gateway_handler.py` is the real entry point.
+    Kept `invoke_orchestrator_agent`, `invoke_orchestrator_action`,
+    `_invoke_orchestrator_runtime` (still actively used).
+  - Updated the module docstring to describe its current role (bridge library,
+    not the Lambda entry point).
+- **`src/dashboard/config.py`**
+  - Fixed the stale `ORCHESTRATOR_URL` default: was
+    `https://mn6y8y0u26.execute-api.us-east-1.amazonaws.com/prod/orchestrate`
+    (old North Virginia host + path), now
+    `https://smxdpw59j6.execute-api.eu-central-1.amazonaws.com/prod` (live
+    Frankfurt API Gateway, flat route convention — confirmed via live curl tests
+    in section 5).
+
+### Files removed (confirmed unused, not referenced anywhere else in the repo)
+
+- `infra/dashboard-api.yaml` + `scripts/deploy_dashboard_api.py` — the separate
+  Dashboard API Lambda tier that was written but never deployed (no matching
+  CloudFormation stack exists).
+- `functions/template.yaml.bak` — leftover SAM template backup, superseded by the
+  boto3-based deploy scripts, not referenced by anything.
+
+### Deliberately left unchanged
+
+- `scripts/deploy_lambda_api_gateway_boto3.py` still doesn't match the live
+  Handler/`{proxy+}` config (see section 3) — fixing that script is a separate,
+  larger task (making the deploy reproducible) and wasn't part of this fix.
+- CloudFront/S3/React app itself, `scripts/deploy_cloudfront.py`,
+  `infra/cloudfront-dashboard.yaml` — untouched.
+- No AWS resources were touched — everything above is a local code change only,
+  not yet redeployed to the live `team01-orchestrator-handler` Lambda.
+
+### Not yet done (needs explicit go-ahead before touching AWS)
+
+- Re-zip and deploy the updated Lambda code to `team01-orchestrator-handler`.
+- Curl-test every route against the live `prod` stage after redeploy.

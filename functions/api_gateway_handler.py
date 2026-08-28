@@ -3,12 +3,14 @@ FastAPI Lambda handler for the team01-orchestrator-api API Gateway.
 
 Sits in front of lambda_orchestrator_handler and exposes a REST API
 that CloudFront and the React dashboard consume:
-    GET  /api/fleet-summary
-    GET  /api/devices
-    GET  /api/devices/{device_id}
-    GET  /api/devices/{device_id}/summary
-    GET  /api/health
-    POST /api/orchestrate  (proxied to the original handler)
+    GET  /health, /devices, /devices/{id}, /devices/{id}/summary
+    GET  /fleet-summary, /alerts, /work-orders, /maintenance-schedule,
+         /spare-parts, /analytics/overview, /analytics/health-history
+    POST /orchestrate  (proxied to the original handler)
+
+work-orders/maintenance-schedule/alerts/fleet-summary are backed by real
+per-device HealthAgent/DiagnosisAgent analysis (see _get_analyzed_devices),
+not fabricated placeholders.
 
 Deployed via Mangum as an AWS Lambda behind the {proxy+} route on
 the team01-orchestrator-api REST API Gateway.
@@ -16,6 +18,7 @@ the team01-orchestrator-api REST API Gateway.
 
 import json
 import os
+import time
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -28,7 +31,6 @@ from mangum import Mangum
 from lambda_orchestrator_handler import (
     invoke_orchestrator_action,
     invoke_orchestrator_agent,
-    parse_api_gateway_event,
 )
 logger = logging.getLogger("API_GW_HANDLER")
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
@@ -95,7 +97,7 @@ async def get_device_summary(device_id: str):
 @app.get("/fleet-summary")
 @app.get("/api/fleet-summary")
 async def fleet_summary():
-    """Aggregate fleet KPIs from orchestrator device list."""
+    """Aggregate fleet KPIs from orchestrator device list, plus real MCP data."""
     logger.info("Fleet summary requested")
 
     devices_result = invoke_orchestrator_action(action="list_devices")
@@ -117,6 +119,19 @@ async def fleet_summary():
 
     logger.info(f"Fleet: {total} devices, {healthy} healthy, {warning} warning, {critical} critical")
 
+    analyzed = _get_analyzed_devices()
+    work_orders: List[Dict[str, Any]] = []
+    maintenance_schedules: List[Dict[str, Any]] = []
+    spare_parts_by_id: Dict[str, Dict[str, Any]] = {}
+    for d in analyzed:
+        tool_results = d.get("tool_results", {})
+        work_orders.extend(extract_work_orders(tool_results))
+        maintenance_schedules.extend(extract_maintenance_schedules(tool_results))
+        for part in extract_spare_parts(tool_results):
+            part_id = part.get("part_id")
+            if part_id and part_id not in spare_parts_by_id:
+                spare_parts_by_id[part_id] = part
+
     return {
         "timestamp": datetime.utcnow().isoformat(),
         "total_devices": total,
@@ -131,9 +146,9 @@ async def fleet_summary():
             if isinstance(d, dict)
             and d.get("health_state", "").lower() not in ("healthy", "normal", "good", "")
         ],
-        "work_orders": [],
-        "maintenance_schedules": [],
-        "spare_parts": [],
+        "work_orders": work_orders,
+        "maintenance_schedules": maintenance_schedules,
+        "spare_parts": list(spare_parts_by_id.values()),
     }
 
 
@@ -143,34 +158,31 @@ async def fleet_summary():
 @app.get("/alerts")
 @app.get("/api/alerts")
 async def get_alerts(severity: Optional[str] = None, skip: int = 0, limit: int = 50):
-    """Generate alerts from devices with critical/warning health states."""
-    devices = _get_devices_list()
+    """Real alerts derived from each device's live HealthAgent/DiagnosisAgent analysis."""
+    devices = _get_analyzed_devices()
 
     alerts = []
     for d in devices:
-        if not isinstance(d, dict):
-            continue
-        state = d.get("health_state", "").lower()
+        state = (d.get("health_status") or d.get("health_state") or "").lower()
         device_id = d.get("device_id", "unknown")
-        deg = d.get("degradation_score", 0)
 
-        if state == "critical" or state == "failure":
+        if state == "critical":
             alerts.append({
                 "id": f"alert-{device_id}-critical",
                 "device_id": device_id,
                 "severity": "critical",
                 "title": f"Critical: {device_id} requires immediate attention",
-                "description": f"Device degradation score {deg:.2f}. Immediate inspection recommended.",
+                "description": d.get("diagnosis", "Device in critical state"),
                 "timestamp": d.get("timestamp"),
                 "action_required": True,
             })
-        elif state in ("warning", "degraded", "alert"):
+        elif state == "warning":
             alerts.append({
                 "id": f"alert-{device_id}-warning",
                 "device_id": device_id,
                 "severity": "high",
                 "title": f"Warning: {device_id} anomaly detected",
-                "description": f"Device degradation score {deg:.2f}. Schedule maintenance soon.",
+                "description": d.get("diagnosis", "Device showing warning signs"),
                 "timestamp": d.get("timestamp"),
                 "action_required": False,
             })
@@ -193,44 +205,18 @@ async def get_alerts(severity: Optional[str] = None, skip: int = 0, limit: int =
 @app.get("/maintenance-schedule")
 @app.get("/api/maintenance-schedule")
 async def get_maintenance_schedule():
-    """Generate maintenance schedules from devices needing attention."""
-    devices = _get_devices_list()
+    """Real maintenance schedules extracted from each device's MCP tool_results."""
+    devices = _get_analyzed_devices()
 
-    schedules = []
+    schedules: List[Dict[str, Any]] = []
     for d in devices:
-        if not isinstance(d, dict):
-            continue
-        state = d.get("health_state", "").lower()
-        device_id = d.get("device_id", "unknown")
-        equip = d.get("equipment_type", "UNKNOWN")
-        deg = d.get("degradation_score", 0)
+        schedules.extend(extract_maintenance_schedules(d.get("tool_results", {})))
 
-        if state in ("critical", "failure"):
-            schedules.append({
-                "device_id": device_id,
-                "priority": "urgent",
-                "reason": f"Critical health state — degradation {deg:.2f}",
-                "start_date": datetime.utcnow().isoformat(),
-                "duration_hours": 4,
-                "estimated_cost": 2500.0,
-                "parts_needed": [f"{equip.lower()}-repair-kit"],
-            })
-        elif state in ("warning", "degraded", "alert"):
-            schedules.append({
-                "device_id": device_id,
-                "priority": "scheduled",
-                "reason": f"Warning state — degradation {deg:.2f}",
-                "start_date": datetime.utcnow().isoformat(),
-                "duration_hours": 2,
-                "estimated_cost": 800.0,
-                "parts_needed": [],
-            })
+    urgent = sum(1 for s in schedules if s.get("priority") == "urgent")
+    scheduled = sum(1 for s in schedules if s.get("priority") == "scheduled")
+    total_cost = sum(s.get("estimated_cost", 0) for s in schedules)
 
-    urgent = sum(1 for s in schedules if s["priority"] == "urgent")
-    scheduled = sum(1 for s in schedules if s["priority"] == "scheduled")
-    total_cost = sum(s["estimated_cost"] for s in schedules)
-
-    schedules.sort(key=lambda s: (0 if s["priority"] == "urgent" else 1, s["start_date"]))
+    schedules.sort(key=lambda s: (0 if s.get("priority") == "urgent" else 1, s.get("start_date", "")))
 
     return {
         "schedules": schedules,
@@ -247,46 +233,22 @@ async def get_maintenance_schedule():
 @app.get("/work-orders")
 @app.get("/api/work-orders")
 async def get_work_orders(status: Optional[str] = None, skip: int = 0, limit: int = 50):
-    """Generate work orders from critical devices."""
-    devices = _get_devices_list()
+    """Real work orders extracted from each device's DiagnosisAgent MCP tool_results."""
+    devices = _get_analyzed_devices()
 
-    work_orders = []
+    work_orders: List[Dict[str, Any]] = []
     for d in devices:
-        if not isinstance(d, dict):
-            continue
-        state = d.get("health_state", "").lower()
-        device_id = d.get("device_id", "unknown")
-        equip = d.get("equipment_type", "UNKNOWN")
-
-        if state in ("critical", "failure"):
-            work_orders.append({
-                "work_order_id": f"WO-{device_id}",
-                "device_id": device_id,
-                "urgency": "immediate",
-                "description": f"Immediate repair required for {equip} {device_id}",
-                "assigned_to": "Maintenance Team A",
-                "estimated_hours": 4,
-                "created_at": datetime.utcnow().isoformat(),
-                "status": "open",
-            })
-        elif state in ("warning", "degraded", "alert"):
-            work_orders.append({
-                "work_order_id": f"WO-{device_id}",
-                "device_id": device_id,
-                "urgency": "urgent",
-                "description": f"Preventive maintenance for {equip} {device_id}",
-                "assigned_to": "Maintenance Team B",
-                "estimated_hours": 2,
-                "created_at": datetime.utcnow().isoformat(),
-                "status": "open",
-            })
+        work_orders.extend(extract_work_orders(d.get("tool_results", {})))
 
     if status:
-        work_orders = [wo for wo in work_orders if wo["status"] == status]
+        work_orders = [wo for wo in work_orders if wo.get("status") == status]
 
-    immediate = sum(1 for wo in work_orders if wo["urgency"] == "immediate")
-    urgent = sum(1 for wo in work_orders if wo["urgency"] == "urgent")
-    total_hours = sum(wo["estimated_hours"] for wo in work_orders)
+    urgency_order = {"immediate": 0, "urgent": 1, "scheduled": 2}
+    work_orders.sort(key=lambda wo: (urgency_order.get(wo.get("urgency"), 3), wo.get("created_at", "")))
+
+    immediate = sum(1 for wo in work_orders if wo.get("urgency") == "immediate")
+    urgent = sum(1 for wo in work_orders if wo.get("urgency") == "urgent")
+    total_hours = sum(wo.get("estimated_hours", 0) for wo in work_orders)
 
     return {
         "work_orders": work_orders[skip : skip + limit],
@@ -398,27 +360,9 @@ async def health_history():
 @app.get("/cache-clear")
 @app.get("/api/cache-clear")
 async def cache_clear():
-    """Clear any cached data and return fresh fleet summary."""
+    """Invalidate the per-device analysis cache and return a fresh fleet summary."""
+    _ANALYSIS_CACHE["devices"] = None
     return await fleet_summary()
-@app.post("/orchestrate")
-@app.post("/api/orchestrate")
-async def orchestrate(body: Dict[str, Any]):
-    """Proxy to the original orchestrator agent invocation."""
-    device_id = body.get("device_id")
-    equipment_type = body.get("equipment_type")
-    current_reading = body.get("current_reading")
-
-    if not all([device_id, equipment_type, current_reading]):
-        raise HTTPException(status_code=400, detail="Missing required fields")
-
-    result = invoke_orchestrator_agent(
-        device_id=device_id,
-        equipment_type=equipment_type,
-        current_reading=current_reading,
-    )
-    if "error" in result:
-        raise HTTPException(status_code=result.get("statusCode", 500), detail=result["error"])
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +423,136 @@ def _unwrap(result: Any) -> Dict[str, Any]:
         if isinstance(body, dict):
             return body
     return result
+
+
+# ---------------------------------------------------------------------------
+# Per-device analysis cache
+#
+# work-orders/maintenance-schedule/alerts/fleet-summary all need each device's
+# real tool_results, which only come back from action="get_device" (the full
+# HealthAgent -> DiagnosisAgent workflow). Calling that once per device on
+# every request would be slow, so results are cached in memory for
+# _ANALYSIS_CACHE_TTL_SECONDS. The cache lives at module scope, so it survives
+# across warm Lambda invocations in the same execution environment.
+# ---------------------------------------------------------------------------
+_ANALYSIS_CACHE: Dict[str, Any] = {"devices": None, "fetched_at": 0.0}
+_ANALYSIS_CACHE_TTL_SECONDS = 300
+
+
+def _get_analyzed_devices() -> List[Dict[str, Any]]:
+    """Return real per-device analysis (health_status, diagnosis, tool_results) for the fleet."""
+    now = time.time()
+    if _ANALYSIS_CACHE["devices"] is not None and (now - _ANALYSIS_CACHE["fetched_at"]) < _ANALYSIS_CACHE_TTL_SECONDS:
+        return _ANALYSIS_CACHE["devices"]
+
+    device_ids = [d.get("device_id") for d in _get_devices_list() if d.get("device_id")]
+    analyzed = []
+    for device_id in device_ids:
+        result = invoke_orchestrator_action(action="get_device", device_id=device_id)
+        body = _unwrap(result)
+        if "error" in body:
+            logger.warning(f"Skipping {device_id} in analysis cache: {body.get('error')}")
+            continue
+        body.setdefault("device_id", device_id)
+        analyzed.append(body)
+
+    _ANALYSIS_CACHE["devices"] = analyzed
+    _ANALYSIS_CACHE["fetched_at"] = now
+    return analyzed
+
+
+# ---------------------------------------------------------------------------
+# MCP tool_results extractors — ported from src/dashboard/routes/api.py so the
+# Lambda's work-orders/maintenance-schedule/alerts routes show the same real
+# data as the local dashboard, instead of fabricated placeholders.
+# ---------------------------------------------------------------------------
+def extract_maintenance_schedules(tool_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract maintenance schedule entries from tool_results['schedule-maintenance']."""
+    schedules: List[Dict[str, Any]] = []
+    if not tool_results or "schedule-maintenance" not in tool_results:
+        return schedules
+
+    data = tool_results.get("schedule-maintenance")
+    if isinstance(data, dict) and "statusCode" in data and "body" in data:
+        data = _unwrap(data)
+    if isinstance(data, dict) and "success" in data and "data" in data:
+        data = data.get("data") if data.get("success") else None
+    elif isinstance(data, dict) and isinstance(data.get("maintenance"), list):
+        data = data.get("maintenance")
+
+    items = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
+    for item in items:
+        if isinstance(item, dict) and item.get("maintenance_id"):
+            schedules.append({
+                "maintenance_id": item.get("maintenance_id"),
+                "device_id": item.get("device_id", ""),
+                "start_date": item.get("start_date"),
+                "duration_hours": item.get("duration_hours", 0),
+                "priority": item.get("priority", "scheduled"),
+                "parts_needed": item.get("parts_needed", []),
+                "estimated_cost": item.get("estimated_cost", 0),
+                "reason": item.get("reason", ""),
+                "status": "scheduled",
+            })
+    return schedules
+
+
+def extract_work_orders(tool_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract work order entries from tool_results['create-work-order']."""
+    work_orders: List[Dict[str, Any]] = []
+    if not tool_results or "create-work-order" not in tool_results:
+        return work_orders
+
+    data = tool_results.get("create-work-order")
+    raw_items = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        if "success" in item and "data" in item:
+            item = item.get("data") if item.get("success") else {}
+        if isinstance(item, dict) and item.get("work_order_id"):
+            work_orders.append({
+                "work_order_id": item.get("work_order_id"),
+                "device_id": item.get("device_id", ""),
+                "work_type": item.get("work_type", "Maintenance"),
+                "urgency": item.get("urgency", "scheduled"),
+                "assigned_to": item.get("assigned_to", "Unassigned"),
+                "estimated_hours": item.get("estimated_hours", 0),
+                "description": item.get("description", ""),
+                "created_at": item.get("created_at"),
+                "status": item.get("status", "open"),
+            })
+    return work_orders
+
+
+def extract_spare_parts(tool_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract spare parts entries from tool_results['get-spare-parts']."""
+    parts: List[Dict[str, Any]] = []
+    if not tool_results or "get-spare-parts" not in tool_results:
+        return parts
+
+    data = tool_results.get("get-spare-parts")
+    if isinstance(data, dict) and "statusCode" in data and "body" in data:
+        data = _unwrap(data)
+    if isinstance(data, dict) and "success" in data and "data" in data:
+        data = data.get("data") if data.get("success") else None
+
+    items = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
+    for p in items:
+        if not isinstance(p, dict) or not p.get("part_id"):
+            continue
+        qty = p.get("quantity_available") or p.get("stock_quantity") or 0
+        availability = p.get("availability") or ("in_stock" if qty > 0 else "out_of_stock")
+        parts.append({
+            "part_id": p.get("part_id"),
+            "name": p.get("name", p.get("part_id")),
+            "equipment_type": p.get("equipment_type") or p.get("category", ""),
+            "quantity_available": qty,
+            "availability": availability,
+            "criticality": p.get("criticality", "standard"),
+        })
+    return parts
 
 
 # ---------------------------------------------------------------------------
