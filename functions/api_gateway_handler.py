@@ -20,6 +20,7 @@ import json
 import os
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -100,9 +101,7 @@ async def fleet_summary():
     """Aggregate fleet KPIs from orchestrator device list, plus real MCP data."""
     logger.info("Fleet summary requested")
 
-    devices_result = invoke_orchestrator_action(action="list_devices")
-    devices_body = _unwrap(devices_result)
-    devices: List[Dict[str, Any]] = devices_body.get("devices", [])
+    devices: List[Dict[str, Any]] = _get_devices_list()
 
     total = len(devices)
     healthy = warning = critical = 0
@@ -362,6 +361,7 @@ async def health_history():
 async def cache_clear():
     """Invalidate the per-device analysis cache and return a fresh fleet summary."""
     _ANALYSIS_CACHE["devices"] = None
+    _DEVICES_LIST_CACHE["devices"] = None
     return await fleet_summary()
 
 
@@ -401,12 +401,30 @@ async def orchestrate(body: Dict[str, Any]):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+_DEVICES_LIST_CACHE: Dict[str, Any] = {"devices": None, "fetched_at": 0.0}
+_DEVICES_LIST_CACHE_TTL_SECONDS = 300
+
+
 def _get_devices_list() -> List[Dict[str, Any]]:
-    """Fetch device list from orchestrator and return the devices array."""
+    """Fetch device list from orchestrator and return the devices array.
+
+    Cached briefly: list_devices is itself a ~7s agent round trip, and
+    fleet-summary needs it both directly (for health counts) and indirectly
+    via _get_analyzed_devices() (for the device_id list to analyze) -
+    caching avoids paying for it twice in the same request under API
+    Gateway's 29s integration timeout.
+    """
+    now = time.time()
+    if _DEVICES_LIST_CACHE["devices"] is not None and (now - _DEVICES_LIST_CACHE["fetched_at"]) < _DEVICES_LIST_CACHE_TTL_SECONDS:
+        return _DEVICES_LIST_CACHE["devices"]
+
     result = invoke_orchestrator_action(action="list_devices")
     body = _unwrap(result)
-    devices = body.get("devices", [])
-    return [d for d in devices if isinstance(d, dict)]
+    devices = [d for d in body.get("devices", []) if isinstance(d, dict)]
+
+    _DEVICES_LIST_CACHE["devices"] = devices
+    _DEVICES_LIST_CACHE["fetched_at"] = now
+    return devices
 
 
 def _unwrap(result: Any) -> Dict[str, Any]:
@@ -430,10 +448,11 @@ def _unwrap(result: Any) -> Dict[str, Any]:
 #
 # work-orders/maintenance-schedule/alerts/fleet-summary all need each device's
 # real tool_results, which only come back from action="get_device" (the full
-# HealthAgent -> DiagnosisAgent workflow). Calling that once per device on
-# every request would be slow, so results are cached in memory for
-# _ANALYSIS_CACHE_TTL_SECONDS. The cache lives at module scope, so it survives
-# across warm Lambda invocations in the same execution environment.
+# HealthAgent -> DiagnosisAgent workflow, ~3s per device). API Gateway REST
+# APIs hard-cap integration time at 29s, and this fleet has 17 devices, so
+# calls are fanned out with a thread pool instead of a sequential loop.
+# Results are cached in memory for _ANALYSIS_CACHE_TTL_SECONDS; the cache lives
+# at module scope, so it survives across warm Lambda invocations.
 # ---------------------------------------------------------------------------
 _ANALYSIS_CACHE: Dict[str, Any] = {"devices": None, "fetched_at": 0.0}
 _ANALYSIS_CACHE_TTL_SECONDS = 300
@@ -446,15 +465,21 @@ def _get_analyzed_devices() -> List[Dict[str, Any]]:
         return _ANALYSIS_CACHE["devices"]
 
     device_ids = [d.get("device_id") for d in _get_devices_list() if d.get("device_id")]
-    analyzed = []
-    for device_id in device_ids:
+
+    def _analyze_one(device_id: str) -> Optional[Dict[str, Any]]:
         result = invoke_orchestrator_action(action="get_device", device_id=device_id)
         body = _unwrap(result)
         if "error" in body:
             logger.warning(f"Skipping {device_id} in analysis cache: {body.get('error')}")
-            continue
+            return None
         body.setdefault("device_id", device_id)
-        analyzed.append(body)
+        return body
+
+    analyzed: List[Dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max(len(device_ids), 1)) as pool:
+        for body in pool.map(_analyze_one, device_ids):
+            if body is not None:
+                analyzed.append(body)
 
     _ANALYSIS_CACHE["devices"] = analyzed
     _ANALYSIS_CACHE["fetched_at"] = now
@@ -537,6 +562,8 @@ def extract_spare_parts(tool_results: Dict[str, Any]) -> List[Dict[str, Any]]:
         data = _unwrap(data)
     if isinstance(data, dict) and "success" in data and "data" in data:
         data = data.get("data") if data.get("success") else None
+    elif isinstance(data, dict) and isinstance(data.get("parts"), list):
+        data = data.get("parts")
 
     items = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
     for p in items:
@@ -546,11 +573,13 @@ def extract_spare_parts(tool_results: Dict[str, Any]) -> List[Dict[str, Any]]:
         availability = p.get("availability") or ("in_stock" if qty > 0 else "out_of_stock")
         parts.append({
             "part_id": p.get("part_id"),
-            "name": p.get("name", p.get("part_id")),
+            "part_name": p.get("part_name", ""),
             "equipment_type": p.get("equipment_type") or p.get("category", ""),
-            "quantity_available": qty,
             "availability": availability,
-            "criticality": p.get("criticality", "standard"),
+            "quantity_available": qty,
+            "lead_time_days": p.get("lead_time_days", 0),
+            "unit_cost": p.get("unit_cost", 0),
+            "criticality": p.get("criticality", "high"),
         })
     return parts
 
