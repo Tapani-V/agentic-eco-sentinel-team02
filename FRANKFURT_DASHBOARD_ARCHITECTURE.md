@@ -1,0 +1,253 @@
+# Frankfurt Dashboard/Lambda Architecture — Current State & Simplification Plan
+
+**Status:** Investigation complete, verified against live AWS resources (`eu-central-1`,
+account `450410489798`) on 2026-08-28. No code changed yet — this is the reference
+document before implementation begins.
+
+---
+
+## 1. Quick comparison: North Virginia (old) vs Frankfurt (current)
+
+| | North Virginia (`event/hackathon-team01-backup-26_08_2026`) | Frankfurt (`event/hackathon-team01`) |
+|---|---|---|
+| Region | us-east-1 | eu-central-1 |
+| Frontend | Local dashboard only (no CloudFront) | CloudFront + S3 + React |
+| API Gateway | Separate REST API (e.g. `mn6y8y0u26...`) | `team01-orchestrator-api` (`smxdpw59j6`) |
+| Lambda entry point | `lambda_orchestrator_handler.lambda_handler` (raw, one file) | `api_gateway_handler.handler` (FastAPI + Mangum) |
+| Routes | `GET /orchestrate/devices`, `/orchestrate/devices/{id}`, `/orchestrate/devices/{id}/summary`, `POST /orchestrate` | `GET /devices`, `/devices/{id}`, `/devices/{id}/summary`, `/fleet-summary`, `/work-orders`, `/maintenance-schedule`, `/alerts`, `/spare-parts`, `/analytics/*`, `POST /orchestrate` |
+| Number of Lambda functions (dashboard+orchestrator part only) | 1 | 1 |
+
+**Key fact:** `functions/api_gateway_handler.py` never existed on the North Virginia
+branch. It was introduced in Frankfurt by commit `a46351f "refactor: separate FastAPI
+gateway from orchestrator handler"`, which split the old single-file handler in two.
+
+---
+
+## 2. Current Frankfurt architecture (verified live)
+
+```mermaid
+flowchart TB
+    U[Browser] --> CF["CloudFront: team01-dashboard\n(E2UL77PA2R4WPA)"]
+    CF -- "/ (static)" --> S3[(S3: React build)]
+    CF -- "/api/*" --> APIGW["API Gateway: team01-orchestrator-api\n(smxdpw59j6, eu-central-1)"]
+
+    subgraph LAMBDA["ONE Lambda: team01-orchestrator-handler"]
+        A["api_gateway_handler.py\n(Mangum entry point = Handler config)\nFastAPI app: /devices, /fleet-summary,\n/work-orders, /alerts, /spare-parts,\n/analytics/*, /orchestrate ..."]
+        B["lambda_orchestrator_handler.py\n(your North Virginia file, trimmed)\ninvoke_orchestrator_action()\ninvoke_orchestrator_agent()"]
+        A -- imports --> B
+    end
+
+    APIGW --> LAMBDA
+    B -- "boto3.invoke_agent_runtime()" --> OR["Orchestrator — AgentCore Runtime\n(orchestrator_runtime_team01)"]
+    OR --> HA["HealthAgent — AgentCore Runtime"]
+    OR -. "if unhealthy" .-> DA["DiagnosisAgent — AgentCore Runtime"]
+    DA -. "MCP tool calls" .-> GW["AgentCore Gateway: team01-mcp-gateway"]
+```
+
+### Only ONE Lambda function exists for this part of the stack
+No "two chained Lambdas." `team01-orchestrator-handler` is the only function; its
+deployment zip contains two Python files that divide responsibility:
+
+- **`functions/api_gateway_handler.py`** — the actual configured entry point
+  (`Handler = api_gateway_handler.handler`, a Mangum-wrapped FastAPI app). Owns all
+  HTTP routing and the dashboard-facing response shaping.
+- **`functions/lambda_orchestrator_handler.py`** — the same file/lineage you used in
+  North Virginia, but trimmed down. Its `lambda_handler`/`handle_get_request`/
+  `create_response` functions are now dead code (not the entry point anymore). What's
+  still actively used: `invoke_orchestrator_action()`, `invoke_orchestrator_agent()`,
+  `parse_api_gateway_event()` — imported directly into `api_gateway_handler.py` and
+  called for every route. This is what actually calls
+  `boto3.invoke_agent_runtime()` against the Orchestrator.
+
+### The API Gateway was not removed
+`team01-orchestrator-api` (`smxdpw59j6`) is alive and does double duty: dashboard API
++ orchestrator bridge. It's a genuinely different, new API Gateway from the old North
+Virginia one (different region, different resources) — it did not carry over 1:1.
+
+### Live API Gateway resources (confirmed via `aws apigateway get-resources`)
+```
+/            -> ANY
+/orchestrate -> OPTIONS, POST
+/{proxy+}    -> ANY   (catches all other paths -> routed into the FastAPI app)
+```
+
+---
+
+## 3. The actual bug (why some dashboard data looks fake)
+
+Every route in `api_gateway_handler.py` **does** call through to the real Orchestrator
+AgentCore Runtime — nothing skips the agents. But not every route asks the Orchestrator
+a question it knows how to answer for real:
+
+| Route | Backing logic |
+|---|---|
+| `/devices`, `/devices/{id}`, `/devices/{id}/summary`, `/health` | ✅ Real — calls `invoke_orchestrator_action(action=...)`, same as North Virginia |
+| `/spare-parts` | ✅ Real — calls the real `get_spare_parts` action |
+| `/fleet-summary` | ✅ Real — aggregates real `list_devices` results |
+| `/work-orders`, `/maintenance-schedule`, `/alerts` | ❌ **Fabricated** — hardcoded values derived from a simple `health_state` string match (e.g. cost=2500, hours=4), not real per-device `tool_results` |
+
+The real logic for the fabricated routes already exists — just not wired up here. It
+lives in **[src/dashboard/routes/api.py](src/dashboard/routes/api.py)**
+(`extract_work_orders`, `extract_maintenance_schedules`, `extract_spare_parts`), which
+loops over devices, calls `get_device` (full analysis) per device, and reads the real
+`tool_results` the DiagnosisAgent's MCP tool calls produced.
+
+### Why this happened
+Neither of the two "proper" alternatives were ever deployed:
+- `infra/dashboard-api.yaml` + `scripts/deploy_dashboard_api.py` (a separate Dashboard
+  API Lambda tier wrapping the real `src/dashboard` logic) — **written, never deployed**
+  (no matching CloudFormation stack or S3 code bucket exists).
+- A reproducible script that deploys `api_gateway_handler.py` correctly —
+  `scripts/deploy_lambda_api_gateway_boto3.py` only packages the old raw
+  `lambda_orchestrator_handler.py` and only wires `POST /orchestrate`; it does **not**
+  create the `{proxy+}` resource or set the FastAPI Handler. Whoever got the current
+  code live did it manually (not captured in any script) — this is the real reason the
+  setup feels ad hoc.
+
+---
+
+## 4. Where the sensor/health data actually comes from
+
+- S3 bucket: `agentic-ai-poc-synthetic-data` (shared across teams), prefix `devices/`
+  → `s3://agentic-ai-poc-synthetic-data/devices/{device_id}.json`
+  (confirmed via the live Orchestrator Runtime's `SYNTHETIC_DATA_BUCKET` env var).
+- Each file is a ~30-day time series of simulated readings, generated by
+  `src/data/equipment_simulator.py`. Each entry already carries a pre-baked
+  `health_state`/`degradation_score` "ground truth" label alongside the sensor
+  `readings` (rpm, current, temperature, voltage, power_factor, vibration for a MOTOR).
+- `list_devices`/`get_device_summary` just read this pre-baked label straight from
+  storage — no agent computation involved (deliberate: cheap enough to poll
+  constantly for a device list/table).
+- `get_device` / `analyze` re-computes health for real via
+  `src/agents/health_agent.py`'s `_compute_degradation_score()`, then runs the full
+  HealthAgent → DiagnosisAgent workflow — this is where genuine agent reasoning and
+  MCP tool calls happen.
+- Dashboard display: shown as an inverted "Health %" bar on device cards
+  (`health = (1 - degradation_score) * 100`), and directly as "Avg Degradation" on the
+  Analytics tab.
+
+---
+
+## 5. Connecting a local dashboard to Frankfurt for a demo
+
+Confirmed via live curl tests against `smxdpw59j6`:
+
+| URL | Result |
+|---|---|
+| `GET /prod/orchestrate/devices` (old North-Virginia-style nested path) | **404** |
+| `GET /prod/devices` (current flat path) | **200 OK** |
+| `GET /prod/health` | **200 OK** |
+
+So the local dashboard's `ORCHESTRATOR_URL` must point at the **stage root**, without
+the old `/orchestrate` suffix:
+```
+ORCHESTRATOR_URL=https://smxdpw59j6.execute-api.eu-central-1.amazonaws.com/prod
+```
+(`src/dashboard/config.py`'s current default still has the old `/orchestrate` suffix
+and the old us-east-1 host — stale, should be updated.)
+
+---
+
+## 6. Simplification plan (not yet implemented)
+
+Goal: restore the North-Virginia-simple mental model — CloudFront/React stay
+untouched, one Lambda, real data everywhere — without adding new infrastructure.
+
+1. **New branch** off `event/hackathon-team01` (e.g. `feature/simplify-dashboard-lambda`)
+   so the current live setup is safe to fall back to.
+2. **Back up the current live Lambda code** (`aws lambda get-function` → download the
+   deployed zip) before changing anything, as a rollback point.
+3. **Leave untouched:** `scripts/deploy_cloudfront.py` / `infra/cloudfront-dashboard.yaml`
+   (CloudFront/S3/React), and the already-real routes (`/devices*`, `/health`,
+   `/spare-parts`, `/fleet-summary`, `POST /orchestrate`) and
+   `lambda_orchestrator_handler.py`'s bridge functions.
+4. **Fix the fabricated routes** (`/work-orders`, `/maintenance-schedule`, `/alerts`)
+   inside `api_gateway_handler.py` — port the real extraction logic from
+   `src/dashboard/routes/api.py`, but call it via the existing
+   `invoke_orchestrator_action()` boto3 helper instead of `OrchestratorClient`'s HTTP
+   calls (avoids the Lambda calling back out to its own API Gateway).
+5. **Standardize the URL convention** on the flat style that's already live
+   (`/devices`, `/health`, ...) and update `src/dashboard/config.py`'s default to match.
+6. **Make the deploy reproducible** — fix `scripts/deploy_lambda_api_gateway_boto3.py`
+   to package `api_gateway_handler.py` + dependencies correctly and create the
+   `{proxy+}` resource, so redeploying is one script run, not manual console work.
+7. **Test before touching production** — run locally first, then redeploy to the same
+   Lambda name (no CloudFront origin change needed) and curl-test every route against
+   the live `prod` stage.
+8. Leave `infra/dashboard-api.yaml` / `scripts/deploy_dashboard_api.py` unused — the
+   single-Lambda approach avoids needing that second tier entirely.
+
+No implementation has been done yet — this document is the agreed reference point
+before starting step 1.
+
+---
+
+## 7. Clarification: is `lambda_orchestrator_handler.py` the same file from North Virginia? How many Lambda functions total?
+
+### Is `lambda_orchestrator_handler.py` the same file from North Virginia?
+
+**Yes, same file/lineage** — but trimmed down. In North Virginia, this ONE file did
+*everything*: HTTP routing (`lambda_handler`, `handle_get_request`, `create_response`)
+**and** the actual `boto3.invoke_agent_runtime()` call to the Orchestrator.
+
+When it was refactored for Frankfurt (`git log` shows a commit literally titled
+*"refactor: separate FastAPI gateway from orchestrator handler"*, `a46351f`):
+- **Kept** the "talk to AgentCore Runtime" parts in this same file:
+  `invoke_orchestrator_agent()`, `invoke_orchestrator_action()`,
+  `parse_api_gateway_event()` — this is the logic recognizable from North Virginia,
+  basically unchanged.
+- **Moved out** the "talk to API Gateway/HTTP routing" parts (`lambda_handler`,
+  `handle_get_request`, `create_response`) into a brand-new file,
+  `api_gateway_handler.py`, rewritten using FastAPI.
+
+So `lambda_orchestrator_handler.py`'s own `lambda_handler` function still physically
+exists in the file but is **dead code now** — it's not the Lambda's entry point
+anymore, and nothing calls it.
+
+### How many Lambda functions total (for this part — not MCP tools)?
+
+**Just ONE** — `team01-orchestrator-handler`. That single Lambda's deployment package
+(zip) contains **both** Python files working together:
+
+```mermaid
+flowchart TB
+    subgraph "ONE Lambda: team01-orchestrator-handler"
+        A["api_gateway_handler.py\n(NEW file — Mangum entry point,\nFastAPI routes, dashboard logic)"]
+        B["lambda_orchestrator_handler.py\n(North Virginia file, trimmed —\njust the boto3 invoke_agent_runtime() helpers)"]
+        A -- "imports invoke_orchestrator_action() etc." --> B
+    end
+    B -- "boto3.invoke_agent_runtime()" --> OR[Orchestrator AgentCore Runtime]
+```
+
+- `api_gateway_handler.py` = the "front door" (this is what AWS actually invokes —
+  `Handler = api_gateway_handler.handler`).
+- `lambda_orchestrator_handler.py` = a library/helper module imported by the front
+  door — it's what actually reaches the Orchestrator agent, same as before.
+
+No hidden second Lambda anywhere in this part of the flow — it's one function, two
+files, one clearly the "router+dashboard logic," the other the "AgentCore bridge"
+already familiar from North Virginia. This is exactly the split to keep in the
+simplified version — clean up what's *inside* `api_gateway_handler.py` (replace the
+fabricated bits) rather than introduce any additional Lambda.
+
+
+## 8. Thoughts before implementation:
+
+Fixing the fabricated-data bug alone wouldn't remove most of the complexity. Here's what would still remain hard for hackathon participants even after that fix:
+
+Deploy/iteration loop is slow and manual:
+
+Any frontend change requires: npm build → sync to S3 → CloudFront cache invalidation → wait for propagation (minutes, not seconds). Compare to local dashboard: save file, refresh browser.
+Any Lambda change requires re-zipping and update-function-code, plus the API Gateway {proxy+} resource and Handler value were set up manually outside any script — a participant who needs to add a new route or fix something has to know AWS API Gateway console mechanics, not just edit Python.
+Debugging is harder:
+
+Errors surface as generic Lambda/API Gateway 500s; root cause requires digging through CloudWatch Logs, cold-start behavior, and IAM permission errors that look identical to code bugs.
+Locally, a stack trace prints directly in the terminal.
+More moving parts to reason about:
+
+Two-layer Lambda handler (api_gateway_handler.py wrapping lambda_orchestrator_handler.py via Mangum) adds an ASGI-to-Lambda-event translation layer participants must understand just to trace a request.
+Requires separate toolchains: Python (backend/agents) and Node/npm/React (frontend) and AWS CLI/console (infra) — vs. just Python for the local dashboard.
+No reliable "reset button":
+
+Since the live config drifted from any deploy script, there's no confident way to tear down and recreate it if something breaks mid-hackathon — a participant could get stuck without AWS console expertise.
+So my view holds: even post-fix, the CloudFront path adds real friction for anyone other than someone deeply familiar with this specific AWS setup. The local dashboard (same real agents/backend, simpler frontend loop) is the safer choice for a time-boxed hackathon with multiple participants.
