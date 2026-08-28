@@ -98,27 +98,20 @@ async def get_device_summary(device_id: str):
 @app.get("/fleet-summary")
 @app.get("/api/fleet-summary")
 async def fleet_summary():
-    """Aggregate fleet KPIs from orchestrator device list, plus real MCP data."""
+    """Aggregate fleet KPIs from real per-device HealthAgent/DiagnosisAgent analysis."""
     logger.info("Fleet summary requested")
 
     devices: List[Dict[str, Any]] = _get_devices_list()
+    analyzed = _get_analyzed_devices()
 
     total = len(devices)
-    healthy = warning = critical = 0
-
-    for d in devices:
-        if isinstance(d, dict):
-            state = d.get("health_state", "").lower()
-            if state in ("healthy", "normal", "good"):
-                healthy += 1
-            elif state in ("warning", "degraded", "alert"):
-                warning += 1
-            elif state in ("critical", "failure", "failed"):
-                critical += 1
+    responded = len(analyzed)
+    healthy = sum(1 for d in analyzed if d.get("health_status") == "healthy")
+    warning = sum(1 for d in analyzed if d.get("health_status") == "warning")
+    critical = sum(1 for d in analyzed if d.get("health_status") == "critical")
 
     logger.info(f"Fleet: {total} devices, {healthy} healthy, {warning} warning, {critical} critical")
 
-    analyzed = _get_analyzed_devices()
     work_orders: List[Dict[str, Any]] = []
     maintenance_schedules: List[Dict[str, Any]] = []
     spare_parts_by_id: Dict[str, Dict[str, Any]] = {}
@@ -131,20 +124,22 @@ async def fleet_summary():
             if part_id and part_id not in spare_parts_by_id:
                 spare_parts_by_id[part_id] = part
 
+    # Sort critical-first, matching src/dashboard/routes/api.py's ordering.
+    problematic = sorted(
+        (d for d in analyzed if d.get("health_status") != "healthy"),
+        key=lambda d: (0 if d.get("health_status") == "critical" else 1, d.get("device_id", "")),
+    )
+
     return {
         "timestamp": datetime.utcnow().isoformat(),
         "total_devices": total,
         "healthy_devices": healthy,
         "warning_devices": warning,
         "critical_devices": critical,
-        "fleet_health_percent": round((healthy / total * 100) if total else 0),
+        "fleet_health_percent": round((healthy / responded * 100) if responded else 0),
         "degradation_trend": "stable",
         "devices_list": devices,
-        "_problematic_devices": [
-            d for d in devices
-            if isinstance(d, dict)
-            and d.get("health_state", "").lower() not in ("healthy", "normal", "good", "")
-        ],
+        "_problematic_devices": problematic,
         "work_orders": work_orders,
         "maintenance_schedules": maintenance_schedules,
         "spare_parts": list(spare_parts_by_id.values()),
