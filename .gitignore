@@ -4,9 +4,13 @@
 .env.*.local
 .agentcore.env
 
-# Per-team AgentCore Runtime deployment output (agent_endpoints.json itself,
-# the original shared deployment's output, stays tracked)
-agent_endpoints.*.json
+# Team-specific env files (e.g. .env.team01, .agentcore.env.team01) - real
+# secrets, never commit. Does not match .env.example/.agentcore.env.example.
+.env.team*
+.agentcore.env.team*
+
+# Local backups of env files (contain real secrets, never commit)
+env_backups/
 
 # Virtual environment
 venv/

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-DynamoDB Setup Script for Phase 1 MCP Tools
+DynamoDB Setup Script for Phase 1 MCP Tools (fully isolated per-team model)
 
 Purpose:
 - Create DynamoDB tables for MCP tool operations
-- Create maintenance_schedules table (for schedule_maintenance Lambda)
-- Create work_orders table (for create_work_order ECS)
+- Create <team_id>-maintenance-schedules table (for schedule_maintenance Lambda)
+- Create <team_id>-work-orders table (for create_work_order ECS)
 - Configure tables with proper attributes and billing
 
 Usage:
-    python scripts/setup_dynamodb_for_mcp_tools.py --region eu-central-1
+    python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01 --region eu-central-1
 
 This script:
-1. Creates maintenance_schedules table
-2. Creates work_orders table
+1. Creates <team_id>-maintenance-schedules table
+2. Creates <team_id>-work-orders table
 3. Waits for tables to become active
 4. Outputs table configuration summary
 """
@@ -21,6 +21,7 @@ This script:
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from typing import Dict
@@ -39,8 +40,11 @@ logger = logging.getLogger(__name__)
 class DynamoDBTableManager:
     """Manages DynamoDB table creation for MCP tools"""
     
-    def __init__(self, region: str = 'eu-central-1'):
+    def __init__(self, team_id: str, region: str = 'eu-central-1'):
+        self.team_id = team_id
         self.region = region
+        self.maintenance_table_name = f'{team_id}-maintenance-schedules'
+        self.work_orders_table_name = f'{team_id}-work-orders'
         self.dynamodb_client = boto3.client('dynamodb', region_name=region)
         self.dynamodb_resource = boto3.resource('dynamodb', region_name=region)
     
@@ -58,8 +62,8 @@ class DynamoDBTableManager:
                 raise
     
     def create_maintenance_schedules_table(self) -> bool:
-        """Create maintenance_schedules table"""
-        table_name = 'team01-maintenance-schedules'
+        """Create <team_id>-maintenance-schedules table"""
+        table_name = self.maintenance_table_name
         
         if self.table_exists(table_name):
             logger.info(f"Table already exists, skipping creation")
@@ -110,8 +114,8 @@ class DynamoDBTableManager:
                 raise
     
     def create_work_orders_table(self) -> bool:
-        """Create work_orders table"""
-        table_name = 'team01-work-orders'
+        """Create <team_id>-work-orders table"""
+        table_name = self.work_orders_table_name
         
         if self.table_exists(table_name):
             logger.info(f"Table already exists, skipping creation")
@@ -203,16 +207,17 @@ class DynamoDBTableManager:
     
     def generate_summary(self) -> str:
         """Generate summary of DynamoDB setup"""
-        maintenance_info = self.get_table_info('team01-maintenance-schedules')
-        work_orders_info = self.get_table_info('team01-work-orders')
+        maintenance_info = self.get_table_info(self.maintenance_table_name)
+        work_orders_info = self.get_table_info(self.work_orders_table_name)
         
         summary = f"""
 DynamoDB Setup Summary
 ======================
 
+Team: {self.team_id}
 Region: {self.region}
 
-Table 1: maintenance_schedules
+Table 1: {self.maintenance_table_name}
   Status: {maintenance_info.get('status', 'UNKNOWN')}
   Item Count: {maintenance_info.get('item_count', 0)}
   Size: {maintenance_info.get('size_bytes', 0)} bytes
@@ -226,7 +231,7 @@ Table 1: maintenance_schedules
   Global Secondary Index:
     - device_id-scheduled_date-index (query by device and date)
 
-Table 2: work_orders
+Table 2: {self.work_orders_table_name}
   Status: {work_orders_info.get('status', 'UNKNOWN')}
   Item Count: {work_orders_info.get('item_count', 0)}
   Size: {work_orders_info.get('size_bytes', 0)} bytes
@@ -259,24 +264,29 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Create tables in eu-central-1
-  python scripts/setup_dynamodb_for_mcp_tools.py
+  # Create tables for team01 in eu-central-1
+  python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01
 
   # Use different region
-  python scripts/setup_dynamodb_for_mcp_tools.py --region us-west-2
+  python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01 --region us-west-2
 
   # Save summary to file
-  python scripts/setup_dynamodb_for_mcp_tools.py --output-summary dynamodb_setup_summary.txt
+  python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01 --output-summary dynamodb_setup_summary.txt
 
   # Verbose output
-  python scripts/setup_dynamodb_for_mcp_tools.py --verbose
+  python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01 --verbose
         """
     )
     
     parser.add_argument(
+        '--team-id',
+        default=os.getenv('TEAM_ID'),
+        help='Team namespace prefix for table names, e.g. team01 (default: $TEAM_ID env var). Required.'
+    )
+    parser.add_argument(
         '--region',
         default='eu-central-1',
-        help='AWS region for tables (default: us-east-1)'
+        help='AWS region for tables (default: eu-central-1)'
     )
     parser.add_argument(
         '--output-summary',
@@ -291,12 +301,15 @@ Examples:
     
     args = parser.parse_args()
     
+    if not args.team_id:
+        parser.error("--team-id is required (or set the TEAM_ID env var) - it names every table this script creates, for full per-team isolation.")
+    
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
     try:
         # Initialize DynamoDB manager
-        manager = DynamoDBTableManager(region=args.region)
+        manager = DynamoDBTableManager(team_id=args.team_id, region=args.region)
         
         # Step 1: Create maintenance_schedules table
         logger.info("=" * 60)

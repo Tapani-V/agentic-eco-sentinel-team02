@@ -230,6 +230,59 @@ already familiar from North Virginia. This is exactly the split to keep in the
 simplified version — clean up what's *inside* `api_gateway_handler.py` (replace the
 fabricated bits) rather than introduce any additional Lambda.
 
+### Terminology: `team01-orchestrator-handler` is a resource name, not a file
+
+`team01-orchestrator-handler` is the **name of the deployed AWS Lambda function**,
+not a source file. A Lambda function is a named cloud resource whose code package
+(a zip file) can contain any number of `.py` files; the function name is assigned
+at deploy time and is independent of the filenames inside the package. The
+`LAMBDA["ONE Lambda: team01-orchestrator-handler"]` box in the diagram above
+represents this deployed function as a container, with the two `.py` files as
+its contents — not two separate deployables.
+
+The `.py` filenames stay generic across teams — every team's deployment package
+contains files named `api_gateway_handler.py` and `lambda_orchestrator_handler.py`.
+The team prefix is applied only to the **AWS resource names** (Lambda function
+name, IAM role name, REST API name) at deploy time:
+
+| Deploy script | Function name | Parameterization |
+|---|---|---|
+| `scripts/deploy_lambda_api_gateway_boto3.py` (old) | `"team01-orchestrator-handler"` | Hardcoded string literal |
+| `scripts/deploy_lambda_api_gateway_fastapi.py` (current) | `f"{team_id}-orchestrator-handler"` | Driven by `--team-id` |
+
+The same pattern applies to the IAM role (`<team_id>-lambda-execution-role`) and
+REST API (`<team_id>-orchestrator-api`) created by the current script.
+
+### File/script usage reference
+
+| File | Status |
+|---|---|
+| `functions/api_gateway_handler.py` | In use — the Lambda entry point (`Handler = api_gateway_handler.handler`) |
+| `functions/lambda_orchestrator_handler.py` | In use, partially — only `invoke_orchestrator_agent`, `invoke_orchestrator_action`, and `_invoke_orchestrator_runtime` are imported and called. `lambda_handler`, `handle_get_request`, and `create_response` were dead code and were removed in the section 9 cleanup. |
+| `scripts/deploy_lambda_api_gateway_boto3.py` | Not used for this stack. Per section 3, it only wires `POST /orchestrate` and does not create the `{proxy+}` resource or set the FastAPI handler, so its output does not match the live configuration. |
+| `scripts/deploy_lambda_api_gateway_fastapi.py` | The current deploy script for this Lambda + API Gateway. Its docstring states it "mirrors the exact live team01 setup...verified via AWS CLI on 2026-08-28" — the live Lambda was originally created manually, and this script was written afterward to capture that configuration in a reproducible, team-parameterized form. |
+
+Deploy command (documented as step 7 in `TEAM_ONBOARDING_STEPS.md`):
+
+```bash
+python scripts/deploy_lambda_api_gateway_fastapi.py --team-id <team> --region <region> --profile <profile>
+```
+
+Prerequisites (not created by this script):
+- `agent_endpoints.<team_id>.json` must exist (produced by step 6, `deploy_to_agentcore_boto3.py`).
+- The `<team_id>-conversation-memory` DynamoDB table and `<team_id>-synthetic-data`
+  S3 bucket must already exist — referenced by the IAM policy this script attaches,
+  but not created by it (open onboarding gap, see "Known gaps" in
+  `TEAM_ONBOARDING_STEPS.md`).
+
+**So the script to run for this part of the setup (Lambda + API Gateway together)
+is `scripts/deploy_lambda_api_gateway_fastapi.py --team-id <team> --region <region>
+--profile <profile>`** (documented as step 7 in `TEAM_ONBOARDING_STEPS.md`). It
+needs `agent_endpoints.<team_id>.json` to already exist (from step 6,
+`deploy_to_agentcore_boto3.py`), and the `<team_id>-conversation-memory` DynamoDB
+table / `<team_id>-synthetic-data` S3 bucket to already exist (referenced by its
+IAM policy, not created by this script — still an open onboarding gap).
+
 
 ## 8. Thoughts before implementation:
 

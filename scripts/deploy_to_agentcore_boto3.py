@@ -13,7 +13,7 @@ team's "<agent>_runtime_<their_id>" runtimes. TEAM_ID comes from
 missing/forgotten TEAM_ID can never silently overwrite a shared resource.
 
 Usage:
-    python scripts/deploy_to_agentcore_boto3.py [--profile PROFILE] [--region REGION] [--team-id TEAM_ID] [--agent AGENT]
+    python scripts/deploy_to_agentcore_boto3.py [--profile PROFILE] [--region REGION] [--team-id TEAM_ID] [--agent AGENT] [--env-file ENV_FILE]
 
 Arguments:
     --profile      AWS SSO profile name (default: StandardAccess-450410489798)
@@ -22,6 +22,9 @@ Arguments:
     --agent        Deploy only this one agent (orchestrator|health_agent|diagnosis_agent).
                    Omit to deploy/update all three (default) - useful when you've only
                    changed one agent and don't want to touch the others.
+    --env-file     Path to the env file to load (default: .agentcore.env). Use this to
+                   point at a team-specific file (e.g. .agentcore.env.team01) without
+                   touching the original .agentcore.env.
 
 Output:
     agent_endpoints.<team_id>.json: this team's deployed agent endpoints
@@ -37,9 +40,11 @@ import argparse
 import boto3
 from botocore.exceptions import ClientError
 
-# Try to load environment variables from .agentcore.env
-env_file = Path(__file__).parent.parent / ".agentcore.env"
-if env_file.exists():
+def load_env_file(env_filename: str = ".agentcore.env") -> None:
+    """Load environment variables from the given env file (relative to repo root), if it exists."""
+    env_file = Path(__file__).parent.parent / env_filename
+    if not env_file.exists():
+        return
     # Try using python-dotenv if available, otherwise parse manually
     try:
         from dotenv import load_dotenv
@@ -505,8 +510,17 @@ Examples:
         default=None,
         help='Deploy only this one agent instead of all three'
     )
+
+    parser.add_argument(
+        '--env-file',
+        default='.agentcore.env',
+        help='Path to the env file to load, relative to repo root (default: .agentcore.env)'
+    )
     
     args = parser.parse_args()
+    
+    # Load env file before reading any env vars (e.g. TEAM_ID) below
+    load_env_file(args.env_file)
     
     # Create deployer
     deployer = BedrockAgentDeployer(profile=args.profile, region=args.region, team_id=args.team_id)

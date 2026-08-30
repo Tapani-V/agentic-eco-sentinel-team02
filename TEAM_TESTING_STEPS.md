@@ -21,7 +21,7 @@ Swagger UIs to check endpoints directly:
 
 Quick dashboard check against these local containers (no AWS involved). Run
 from the repo root as a module (not `cd src/dashboard && python app.py` —
-that breaks on relative imports); on WSL/Ubuntu use `python3`, not `python`:
+that breaks on relative imports)
 
 ```bash
 ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
@@ -71,7 +71,7 @@ before: `https://mn6y8y0u26.execute-api.us-east-1.amazonaws.com/prod/orchestrate
 ## 6. Connect the dashboard to the API Gateway endpoint
 
 This is already `src/dashboard/config.py`'s default — just run it with no
-override, from the repo root (use `python3` on WSL/Ubuntu):
+override, from the repo root:
 
 ```bash
 python3 -m src.dashboard.app

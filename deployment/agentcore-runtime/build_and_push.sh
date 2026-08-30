@@ -3,31 +3,48 @@
 # Build and push AgentCore Runtime images (ARM64, required by AWS Bedrock
 # AgentCore Runtime) to ECR.
 #
-# Usage: ./deployment/agentcore-runtime/build_and_push.sh [orchestrator|health_agent|diagnosis_agent]
+# Usage: ./deployment/agentcore-runtime/build_and_push.sh [--env-file FILE] [orchestrator|health_agent|diagnosis_agent]
 #
 # Run from the repository root. Builds all 3 agent images (or just one, if
 # named as an argument) using the Dockerfiles in this directory, then pushes
 # them to ECR. After pushing, register/update the runtime(s) with:
 #   python3 scripts/deploy_to_agentcore_boto3.py --profile <your-profile>
 #
-# Team image tag: images are tagged "${TEAM_ID}" (from .agentcore.env or the
+# Team image tag: images are tagged "${TEAM_ID}" (from the env file or the
 # environment) instead of "latest", so a team's rebuild never overwrites the
 # shared ":latest" image other teams/the default deployment may still use.
-# TEAM_ID is required - source .agentcore.env first or export it manually.
+# TEAM_ID is required - source the env file first or export it manually.
+#
+# --env-file FILE: load TEAM_ID/AWS_ACCOUNT_ID/AWS_REGION from FILE instead of
+# the default .agentcore.env - use this to point at a team-specific file (e.g.
+# .agentcore.env.team01) without touching the original.
 
 set -e
 
-if [ -f ".agentcore.env" ]; then
+ENV_FILE=".agentcore.env"
+AGENT_FILTER=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --env-file)
+            ENV_FILE="$2"
+            shift 2
+            ;;
+        *)
+            AGENT_FILTER="$1"
+            shift
+            ;;
+    esac
+done
+
+if [ -f "$ENV_FILE" ]; then
     # shellcheck disable=SC1091
-    set -a; source .agentcore.env; set +a
+    set -a; source "$ENV_FILE"; set +a
 fi
 
 if [ -z "$TEAM_ID" ]; then
-    echo "Error: TEAM_ID is not set. Add TEAM_ID=<yourteam> to .agentcore.env or export it." >&2
+    echo "Error: TEAM_ID is not set. Add TEAM_ID=<yourteam> to $ENV_FILE or export it." >&2
     exit 1
 fi
-
-AGENT_FILTER="$1"
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-450410489798}"
 REGION="${AWS_REGION:-us-east-1}"
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"

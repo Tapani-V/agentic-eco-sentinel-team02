@@ -36,6 +36,12 @@ STACK_NAME = f"{RESOURCE_PREFIX}dashboard"
 TEMPLATE_PATH = "infra/cloudfront-dashboard.yaml"
 FRONTEND_DIR = "frontend"
 
+# API Gateway must already be deployed before this script runs - CloudFront bakes
+# its domain in as a fixed origin at stack-create time. Defaults match team01's
+# existing values (same as the CFN template's own defaults) for backward compat.
+API_GATEWAY_DOMAIN = os.getenv("API_GATEWAY_DOMAIN", "smxdpw59j6.execute-api.eu-central-1.amazonaws.com")
+API_GATEWAY_STAGE_PATH = os.getenv("API_GATEWAY_STAGE_PATH", "/prod")
+
 # Project root is one level up from scripts/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -104,6 +110,12 @@ def deploy_stack(cf_client) -> dict:
 
     template_body = template_path.read_text()
 
+    stack_parameters = [
+        {"ParameterKey": "ResourcePrefix", "ParameterValue": RESOURCE_PREFIX},
+        {"ParameterKey": "ApiGatewayDomain", "ParameterValue": API_GATEWAY_DOMAIN},
+        {"ParameterKey": "ApiGatewayStagePath", "ParameterValue": API_GATEWAY_STAGE_PATH},
+    ]
+
     # Check if stack already exists
     stack_exists = False
     try:
@@ -119,6 +131,7 @@ def deploy_stack(cf_client) -> dict:
             cf_client.update_stack(
                 StackName=STACK_NAME,
                 TemplateBody=template_body,
+                Parameters=stack_parameters,
                 Capabilities=["CAPABILITY_IAM", "CAPABILITY_NAMED_IAM"],
             )
             log("Waiting for stack update to complete...")
@@ -140,6 +153,7 @@ def deploy_stack(cf_client) -> dict:
         cf_client.create_stack(
             StackName=STACK_NAME,
             TemplateBody=template_body,
+            Parameters=stack_parameters,
             Capabilities=["CAPABILITY_IAM", "CAPABILITY_NAMED_IAM"],
         )
         log("Waiting for stack creation to complete...")

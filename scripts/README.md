@@ -18,11 +18,11 @@ Purpose of every script in this folder, grouped by what part of the system they 
 |---|---|
 | `setup_s3_synthetic_data.py` | Uploads the synthetic device sensor data to S3 (used by `list_devices`/`get_device`). |
 | `setup_s3_for_mcp_tools.py` | Creates the S3 bucket/prefix used by MCP tools for supporting data. |
-| `setup_dynamodb_for_mcp_tools.py` | Creates the `maintenance_schedules` and `work_orders` DynamoDB tables. |
-| `deploy_mcp_lambdas.py` | Deploys/updates the `get_spare_parts` and `schedule_maintenance` Lambda functions. |
-| `create_apprunner_ecr_pull_role.py` | One-time: creates the IAM role App Runner uses to pull the `create_work_order` image from ECR. |
-| `push_create_work_order_to_ecr.sh` | Builds and pushes the `create_work_order` FastAPI service (`src/ecs_tasks/create_work_order/app.py`) image to ECR. |
-| `deploy_create_work_order_apprunner.sh` | Deploys that image as an App Runner service (this is the currently-used path — see `CREATE_WORK_ORDER_URL` in `.env.example`). |
+| `setup_dynamodb_for_mcp_tools.py` | Creates this team's own `<team_id>-maintenance-schedules` and `<team_id>-work-orders` DynamoDB tables. Accepts `--team-id` (or `$TEAM_ID`) — fully isolated per team since 2026-08-30 (was hardcoded to `team01-*`). |
+| `deploy_mcp_lambdas.py` | Deploys/updates this team's own `<team_id>-get-spare-parts` and `<team_id>-schedule-maintenance` Lambda functions + IAM role. Accepts `--env-file` (reads `TEAM_ID`) — fully isolated per team since 2026-08-30 (was hardcoded to `team01-*`). |
+| `create_apprunner_ecr_pull_role.py` | One-time, account-wide: creates the IAM role App Runner uses to pull the `create_work_order` image from ECR. IAM roles aren't region-scoped — do not re-run per region/team, reuse the existing `apprunner-ecr-pull-role` ARN. |
+| `push_create_work_order_to_ecr.sh` | Pushes the `create_work_order` FastAPI service (`src/ecs_tasks/create_work_order/app.py`) image to ECR. Accepts `--region`/`--profile`/`--repo-name` — a private ECR image must live in the same region as the App Runner service pulling it, so this needs to be re-run per region (build the image locally first: `docker build -t create-work-order:latest src/ecs_tasks/create_work_order/`). |
+| `deploy_create_work_order_apprunner.sh` | Deploys that image as an App Runner service (this is the currently-used path — see `CREATE_WORK_ORDER_URL` in `.env.example`). Accepts `--region`/`--service-name` — re-run per region for new teams. |
 | `create_agentcore_gateway_starter.py` | One-time: creates the shared AgentCore Gateway that all MCP tools are registered under. |
 | `register_mcp_tools_starter.py` | Registers/updates Lambda + HTTP tools as targets on the shared Gateway. **This is the script to use** when adding a new tool. |
 | `setup_cognito_token_flow.py` | Wires up the Cognito client-credentials flow the Gateway uses for machine-to-machine auth; documents the end-to-end setup order (Gateway → Lambdas → registration). |

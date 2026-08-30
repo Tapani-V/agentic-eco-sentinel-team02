@@ -3,9 +3,11 @@
 HealthAgent - Analyzes equipment health from sensor data
 Week 2 Day 5-7: Threshold-based health classification with anomaly detection
 
-LOCAL ANALYSIS + MCP TOOL CALLS FOR CRITICAL STATUS
-- Pure local analysis (no external dependencies)
-- Calls create-work-order MCP tool if health_status = critical
+PURE LOCAL ANALYSIS - NO MCP TOOL CALLS
+- Threshold rules + anomaly detection only (no external dependencies)
+- Does NOT call any MCP tools itself; critical-status escalation to
+  create-work-order happens in DiagnosisAgent, which the Orchestrator
+  invokes next whenever health_status != 'healthy'
 """
 
 from typing import Dict, Any, List
@@ -20,19 +22,16 @@ logger = logging.getLogger(__name__)
 
 class HealthAgent(BaseAgent):
     """
-    HealthAgent: Pure health analysis via threshold rules + MCP tool for critical
+    HealthAgent: Pure health analysis via threshold rules (no MCP tool calls)
     
     Week 2 Day 5-7 Design:
     - Apply threshold rules to sensor data (deterministic, local)
     - Classify health state: healthy → warning → critical
     - Detect anomalies (sensors out of normal range)
-    - If status = CRITICAL: Call MCP create-work-order tool (immediate escalation)
-    - Return classification + anomalies + tool_results to Orchestrator
+    - Return classification + anomalies to Orchestrator
     
-    MCP Integration:
-    - Uses GatewayClient for Cognito token + tool calls
-    - Calls create-work-order when health_status = critical
-    - Gracefully handles tool failures (doesn't break local analysis)
+    Note: Critical-status escalation (create-work-order MCP tool call) is
+    handled by DiagnosisAgent, not here - see DiagnosisAgent._execute_action().
     """
     
     def __init__(self):

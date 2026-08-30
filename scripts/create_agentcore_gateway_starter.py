@@ -4,11 +4,21 @@ Create AgentCore Gateway using the starter kit, set up Cognito OAuth, and output
 """
 import os
 import json
+import argparse
 from dotenv import load_dotenv
 from bedrock_agentcore_starter_toolkit.operations.gateway.client import GatewayClient
 import boto3
 
-load_dotenv(".agentcore.env")
+_arg_parser = argparse.ArgumentParser(add_help=False)
+_arg_parser.add_argument(
+    "--env-file",
+    default=".agentcore.env",
+    help="Path to the env file to load (default: .agentcore.env). Use this to point at a "
+         "team-specific file (e.g. .agentcore.env.team01) without touching the original."
+)
+_args, _ = _arg_parser.parse_known_args()
+
+load_dotenv(_args.env_file)
 
 REGION = os.getenv("AWS_REGION")
 PROFILE = os.getenv("AWS_PROFILE")
@@ -16,6 +26,7 @@ USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID")
 APP_CLIENT_ID = os.getenv("COGNITO_APP_CLIENT_ID")
 PERMISSION_BOUNDARY = os.getenv("PERMISSION_BOUNDARY")
 AWS_ACCOUNT_ID = os.getenv("AWS_ACCOUNT_ID")
+TEAM_ID = os.getenv("TEAM_ID")
 
 
 def build_authorizer_config_from_existing_cognito() -> dict:
@@ -112,7 +123,9 @@ def main():
     # Create execution role
     gateway_role_arn = create_gateway_execution_role()
 
-    GATEWAY_NAME = "AgenticAI-PoC-3-1-MCP-Gateway"
+    # Team-specific gateway name keeps each team fully isolated (falls back to the
+    # original shared name when TEAM_ID isn't set, e.g. running against .agentcore.env).
+    GATEWAY_NAME = f"{TEAM_ID}-mcp-gateway" if TEAM_ID else "AgenticAI-PoC-3-1-MCP-Gateway"
 
     # Try to create the gateway; if it already exists, fetch it instead
     try:
@@ -142,15 +155,17 @@ def main():
     print(f"Gateway URL: {gateway_url}")
     print(f"Role ARN:    {role_arn}")
 
-    # Save gateway info for downstream scripts
-    with open("gateway_info.json", "w") as f:
+    # Save gateway info for downstream scripts (team-specific filename when TEAM_ID is set,
+    # so multiple teams' results don't collide/overwrite each other in the same checkout)
+    gateway_info_file = f"gateway_info.{TEAM_ID}.json" if TEAM_ID else "gateway_info.json"
+    with open(gateway_info_file, "w") as f:
         import json
         json.dump({
             "gateway_id": gateway_id,
             "gateway_url": gateway_url,
             "role_arn": role_arn
         }, f, indent=2)
-    print("✓ Gateway info saved to gateway_info.json")
+    print(f"✓ Gateway info saved to {gateway_info_file}")
 
 if __name__ == "__main__":
     main()

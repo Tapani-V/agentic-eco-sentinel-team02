@@ -4,13 +4,24 @@ Register MCP tools (Lambda/App Runner) with AgentCore Gateway using the starter 
 """
 import os
 import json
+import argparse
 from dotenv import load_dotenv
 from bedrock_agentcore_starter_toolkit.operations.gateway.client import GatewayClient
 
-load_dotenv(".agentcore.env")
+_arg_parser = argparse.ArgumentParser(add_help=False)
+_arg_parser.add_argument(
+    "--env-file",
+    default=".agentcore.env",
+    help="Path to the env file to load (default: .agentcore.env). Use this to point at a "
+         "team-specific file (e.g. .agentcore.env.team01) without touching the original."
+)
+_args, _ = _arg_parser.parse_known_args()
+
+load_dotenv(_args.env_file)
 
 REGION = os.getenv("AWS_REGION")
 PROFILE = os.getenv("AWS_PROFILE")
+TEAM_ID = os.getenv("TEAM_ID")
 GET_SPARE_PARTS_LAMBDA_ARN = os.getenv("GET_SPARE_PARTS_LAMBDA_ARN")
 SCHEDULE_MAINTENANCE_LAMBDA_ARN = os.getenv("SCHEDULE_MAINTENANCE_LAMBDA_ARN")
 CREATE_WORK_ORDER_URL = os.getenv("CREATE_WORK_ORDER_URL")
@@ -18,7 +29,10 @@ CREATE_WORK_ORDER_URL = os.getenv("CREATE_WORK_ORDER_URL")
 if PROFILE:
     os.environ["AWS_PROFILE"] = PROFILE
 
-with open("gateway_info.json") as f:
+# Team-specific gateway_info file keeps each team's Gateway details isolated
+# (falls back to the shared filename when TEAM_ID isn't set).
+GATEWAY_INFO_FILE = f"gateway_info.{TEAM_ID}.json" if TEAM_ID else "gateway_info.json"
+with open(GATEWAY_INFO_FILE) as f:
     gateway_info = json.load(f)
 GATEWAY_ID = gateway_info["gateway_id"]
 GATEWAY_ROLE_ARN = gateway_info.get("role_arn", "")

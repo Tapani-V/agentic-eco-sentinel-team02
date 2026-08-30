@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """
-Deploys MCP Lambda functions to AWS:
-- Creates/updates IAM role with correct permissions and permission boundary
+Deploys MCP Lambda functions to AWS (fully isolated per-team model):
+- Creates/updates a team-specific IAM role with correct permissions and permission boundary
 - Packages Lambda code (and dependencies if needed)
-- Deploys/updates Lambda functions
+- Deploys/updates team-specific Lambda functions ("<team_id>-get-spare-parts",
+  "<team_id>-schedule-maintenance")
 - Sets environment variables
 - Tests invocation with sample payloads
 
 Requirements:
 - boto3
 - awscli (for local testing, optional)
-- .env file with AWS_REGION, AWS_PROFILE, AWS_ACCOUNT_ID, PERMISSION_BOUNDARY
+- env file with TEAM_ID, AWS_REGION, AWS_PROFILE, AWS_ACCOUNT_ID, PERMISSION_BOUNDARY
+  (e.g. .agentcore.env.team01)
 
 Usage:
-  python scripts/deploy_mcp_lambdas.py
+  python scripts/deploy_mcp_lambdas.py --env-file .agentcore.env.team01
 """
 import os
 import sys
@@ -22,18 +24,32 @@ import zipfile
 import shutil
 import tempfile
 import time
+import argparse
 from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
-# Load .env
-load_dotenv()
+_arg_parser = argparse.ArgumentParser(add_help=False)
+_arg_parser.add_argument(
+    "--env-file",
+    default=".agentcore.env",
+    help="Path to the env file to load (default: .agentcore.env). Use this to point at a "
+         "team-specific file (e.g. .agentcore.env.team01) without touching the original."
+)
+_args, _ = _arg_parser.parse_known_args()
+
+load_dotenv(_args.env_file)
 
 AWS_REGION = os.getenv('AWS_REGION', 'eu-central-1')
 AWS_PROFILE = os.getenv('AWS_PROFILE')
 AWS_ACCOUNT_ID = os.getenv('AWS_ACCOUNT_ID')
 PERMISSION_BOUNDARY = os.getenv('PERMISSION_BOUNDARY')
+TEAM_ID = os.getenv('TEAM_ID')
+
+if not TEAM_ID:
+    sys.exit("TEAM_ID must be set (in the env file or environment) - it names every "
+             "resource this script creates, for full per-team isolation.")
 
 # Build permission boundary ARN from name if not already an ARN
 if PERMISSION_BOUNDARY and not PERMISSION_BOUNDARY.startswith('arn:'):
@@ -41,25 +57,25 @@ if PERMISSION_BOUNDARY and not PERMISSION_BOUNDARY.startswith('arn:'):
 else:
     PERMISSION_BOUNDARY_ARN = PERMISSION_BOUNDARY
 
-# Lambda and IAM config
+# Lambda and IAM config - all resource names derived from TEAM_ID for full per-team isolation
 LAMBDA_FUNCTIONS = [
     {
-        'name': 'team01-get-spare-parts',
+        'name': f'{TEAM_ID}-get-spare-parts',
         'handler': 'get_spare_parts_handler.lambda_handler',
         'filename': 'get_spare_parts_handler.py',
         'env': {
-            'MCP_TOOLS_BUCKET': 'team01-mcp-tools',
+            'MCP_TOOLS_BUCKET': f'{TEAM_ID}-mcp-tools',
         },
         'test_event': {
             "part_type": "bearing"
         }
     },
     {
-        'name': 'team01-schedule-maintenance',
+        'name': f'{TEAM_ID}-schedule-maintenance',
         'handler': 'schedule_maintenance_handler.lambda_handler',
         'filename': 'schedule_maintenance_handler.py',
         'env': {
-            'MAINTENANCE_TABLE': 'team01-maintenance-schedules',
+            'MAINTENANCE_TABLE': f'{TEAM_ID}-maintenance-schedules',
         },
         'test_event': {
             "device_id": "DEV-001",
@@ -68,7 +84,7 @@ LAMBDA_FUNCTIONS = [
         }
     }
 ]
-LAMBDA_ROLE_NAME = 'team01-mcp-tools-lambda-role'
+LAMBDA_ROLE_NAME = f'{TEAM_ID}-mcp-tools-lambda-role'
 LAMBDA_ASSUME_ROLE_POLICY = {
     "Version": "2012-10-17",
     "Statement": [
@@ -85,14 +101,14 @@ LAMBDA_POLICY = {
         {
             "Effect": "Allow",
             "Action": ["s3:GetObject"],
-            "Resource": ["arn:aws:s3:::team01-mcp-tools/*"]
+            "Resource": [f"arn:aws:s3:::{TEAM_ID}-mcp-tools/*"]
         },
         {
             "Effect": "Allow",
             "Action": ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:GetItem", "dynamodb:Query"],
             "Resource": [
-                f"arn:aws:dynamodb:{AWS_REGION}:{AWS_ACCOUNT_ID}:table/team01-maintenance-schedules",
-                f"arn:aws:dynamodb:{AWS_REGION}:{AWS_ACCOUNT_ID}:table/team01-work-orders"
+                f"arn:aws:dynamodb:{AWS_REGION}:{AWS_ACCOUNT_ID}:table/{TEAM_ID}-maintenance-schedules",
+                f"arn:aws:dynamodb:{AWS_REGION}:{AWS_ACCOUNT_ID}:table/{TEAM_ID}-work-orders"
             ]
         },
         {
@@ -132,7 +148,7 @@ def ensure_iam_role(iam):
     # Attach policy
     iam.put_role_policy(
         RoleName=LAMBDA_ROLE_NAME,
-        PolicyName='team01-mcp-tools-lambda-policy',
+        PolicyName=f'{TEAM_ID}-mcp-tools-lambda-policy',
         PolicyDocument=json.dumps(LAMBDA_POLICY)
     )
     return iam.get_role(RoleName=LAMBDA_ROLE_NAME)['Role']['Arn']

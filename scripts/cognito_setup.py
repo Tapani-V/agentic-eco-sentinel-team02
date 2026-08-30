@@ -196,6 +196,7 @@ def setup_cognito(region: str, user_pool_name: str, client_name: str,
 
 if __name__ == "__main__":
     import sys
+    import argparse
     from pathlib import Path
     
     # Setup logging
@@ -204,11 +205,26 @@ if __name__ == "__main__":
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
     
+    parser = argparse.ArgumentParser(description="Cognito User Pool Setup")
+    parser.add_argument(
+        "--env-file",
+        default=".env",
+        help="Path to the env file to load (default: .env). Use this to point at a "
+             "team-specific file (e.g. .env.team01) without touching the original."
+    )
+    parser.add_argument(
+        "--agentcore-env-file",
+        default=None,
+        help="Path to persist COGNITO_USER_POOL_ID into (default: derived from --env-file, "
+             "e.g. .env.team01 -> .agentcore.env.team01)."
+    )
+    cli_args = parser.parse_args()
+    
     # Load environment variables
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from scripts.config import Config
     
-    config = Config()
+    config = Config(env_file=cli_args.env_file)
     cognito_info = setup_cognito(
         config.region,
         config.cognito_user_pool_name,
@@ -221,3 +237,15 @@ if __name__ == "__main__":
     print("\n🔐 Cognito Configuration:")
     for key, value in cognito_info.items():
         print(f"  {key}: {value}")
+    
+    # Persist user_pool_id into the paired AgentCore env file so downstream
+    # scripts (setup_cognito_token_flow.py, create_agentcore_gateway_starter.py,
+    # etc.) don't need a manual copy step.
+    agentcore_env_file = cli_args.agentcore_env_file
+    if agentcore_env_file is None:
+        suffix = cli_args.env_file[len(".env"):] if cli_args.env_file.startswith(".env") else ""
+        agentcore_env_file = f".agentcore.env{suffix}"
+    
+    from scripts.setup_cognito_token_flow import merge_env_values
+    merge_env_values(agentcore_env_file, {"COGNITO_USER_POOL_ID": cognito_info["user_pool_id"]})
+    print(f"\n✓ Persisted COGNITO_USER_POOL_ID into {agentcore_env_file}")

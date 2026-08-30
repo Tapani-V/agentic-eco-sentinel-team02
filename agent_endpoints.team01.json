@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-08-26T13:55:46.931694",
+  "team_id": "team01",
+  "region": "us-east-1",
+  "profile": "StandardAccess-450410489798",
+  "account_id": "450410489798",
+  "agents": {
+    "health_agent": "https://agentcore-runtime.us-east-1.amazonaws.com/runtimes/health_agent_runtime_team01-ZTp5qKFtnh",
+    "diagnosis_agent": "https://agentcore-runtime.us-east-1.amazonaws.com/runtimes/diagnosis_agent_runtime_team01-iIYJP089LF",
+    "orchestrator": "https://agentcore-runtime.us-east-1.amazonaws.com/runtimes/orchestrator_runtime_team01-he4Cv4Aeq1"
+  },
+  "details": {
+    "health_agent": {
+      "runtime_id": "health_agent_runtime_team01-ZTp5qKFtnh",
+      "runtime_arn": "arn:aws:bedrock-agentcore:us-east-1:450410489798:runtime/health_agent_runtime_team01-ZTp5qKFtnh",
+      "endpoint_url": "https://agentcore-runtime.us-east-1.amazonaws.com/runtimes/health_agent_runtime_team01-ZTp5qKFtnh"
+    },
+    "diagnosis_agent": {
+      "runtime_id": "diagnosis_agent_runtime_team01-iIYJP089LF",
+      "runtime_arn": "arn:aws:bedrock-agentcore:us-east-1:450410489798:runtime/diagnosis_agent_runtime_team01-iIYJP089LF",
+      "endpoint_url": "https://agentcore-runtime.us-east-1.amazonaws.com/runtimes/diagnosis_agent_runtime_team01-iIYJP089LF"
+    },
+    "orchestrator": {
+      "runtime_id": "orchestrator_runtime_team01-he4Cv4Aeq1",
+      "runtime_arn": "arn:aws:bedrock-agentcore:us-east-1:450410489798:runtime/orchestrator_runtime_team01-he4Cv4Aeq1",
+      "endpoint_url": "https://agentcore-runtime.us-east-1.amazonaws.com/runtimes/orchestrator_runtime_team01-he4Cv4Aeq1"
+    }
+  },
+  "instructions": {
+    "orchestrator": "Call orchestrator endpoint to invoke full workflow",
+    "health_agent": "Call health_agent endpoint for health analysis",
+    "diagnosis_agent": "Call diagnosis_agent endpoint for diagnostics"
+  }
+}
