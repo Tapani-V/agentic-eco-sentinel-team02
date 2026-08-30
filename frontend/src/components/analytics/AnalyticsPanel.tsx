@@ -1,10 +1,10 @@
 import React from 'react';
-import { useFleetSummary, useAnalyticsOverview, useHealthHistory } from '../../queries';
+import { useFleetSummary, useAnalyticsOverview } from '../../queries';
 import { Spinner, ErrorState, useAnnouncer } from '../common';
 import { formatPercent1, numberOr0 } from '../../domain/format';
 import { ANALYTICS_CACHE_MAX_AGE_MS } from '../../config/intervals';
 import { useAnnounceOnLoad } from '../../hooks/useAnnounceOnLoad';
-import { HealthHistoryChart } from './HealthHistoryChart';
+import { AgentDecisionOverview } from './AgentDecisionOverview';
 import type { AnalyticsOverview, AnalyticsSnapshot } from '../../api/types';
 import type { UseQueryResult } from '@tanstack/react-query';
 
@@ -54,7 +54,7 @@ export function useAnalytics(): AnalyticsResult {
 /** Analytics panel displaying confidence, degradation, total devices, and equipment distribution. */
 export function AnalyticsPanel(): React.JSX.Element {
   const { data, isLoading, error, refetch } = useAnalytics();
-  const healthHistory = useHealthHistory();
+  const fleet = useFleetSummary();
   const { announce } = useAnnouncer();
 
   // Announce on load using a minimal query-like object
@@ -86,7 +86,7 @@ export function AnalyticsPanel(): React.JSX.Element {
 
       <div className="summary-cards">
         <div className="summary-card summary-card--cyan">
-          <div className="summary-card__label">Avg Confidence</div>
+          <div className="summary-card__label">Avg Remaining Health</div>
           <div className="summary-card__value">{formatPercent1(data.average_confidence)}</div>
         </div>
         <div className="summary-card summary-card--gold">
@@ -113,17 +113,7 @@ export function AnalyticsPanel(): React.JSX.Element {
         </section>
       )}
 
-      {/* Fleet Health History Chart */}
-      <section className="analytics-health-history">
-        <h4 className="analytics-health-history__title">📈 Fleet Health History</h4>
-        {healthHistory.isLoading && <Spinner label="Loading health history…" />}
-        {healthHistory.data && healthHistory.data.devices.length === 0 && (
-          <p className="analytics-health-history__empty">No historical health data available</p>
-        )}
-        {healthHistory.data && healthHistory.data.devices.length > 0 && (
-          <HealthHistoryChart data={healthHistory.data} />
-        )}
-      </section>
+      {fleet.data && <AgentDecisionOverview fleet={fleet.data} />}
     </div>
   );
 }

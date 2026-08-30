@@ -1,0 +1,5 @@
+{
+  "gateway_id": "team01-mcp-gateway-xuuwo764wu",
+  "gateway_url": "https://team01-mcp-gateway-xuuwo764wu.gateway.bedrock-agentcore.eu-central-1.amazonaws.com/mcp",
+  "role_arn": "arn:aws:iam::450410489798:role/AgentCoreGatewayExecutionRole"
+}

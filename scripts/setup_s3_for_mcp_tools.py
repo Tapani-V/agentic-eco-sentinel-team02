@@ -20,6 +20,7 @@ This script:
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -38,11 +39,12 @@ logger = logging.getLogger(__name__)
 class S3DataManager:
     """Manages S3 bucket creation and data uploads for MCP tools"""
     
-    def __init__(self, bucket_name: str, region: str = 'eu-central-1'):
+    def __init__(self, bucket_name: str, region: str = 'eu-central-1', profile: Optional[str] = None):
         self.bucket_name = bucket_name
         self.region = region
-        self.s3_client = boto3.client('s3', region_name=region)
-        self.s3_resource = boto3.resource('s3', region_name=region)
+        session = boto3.Session(profile_name=profile, region_name=region) if profile else boto3.Session(region_name=region)
+        self.s3_client = session.client('s3')
+        self.s3_resource = session.resource('s3')
     
     def bucket_exists(self) -> bool:
         """Check if S3 bucket exists"""
@@ -154,66 +156,6 @@ class S3DataManager:
         logger.info(f"✅ All {len(uploaded_files)} files uploaded successfully")
         return uploaded_files
     
-    def configure_bucket_policy(self) -> bool:
-        """Configure bucket policy to allow Lambda/ECS tools to read data"""
-        try:
-            logger.info(f"Configuring bucket policy for Lambda/ECS access...")
-            
-            # Policy allows Lambda/ECS execution roles to read objects
-            bucket_policy = {
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Sid": "AllowLambdaECSRead",
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": [
-                                "lambda.amazonaws.com",
-                                "ecs-tasks.amazonaws.com"
-                            ]
-                        },
-                        "Action": [
-                            "s3:GetObject",
-                            "s3:ListBucket"
-                        ],
-                        "Resource": [
-                            f"arn:aws:s3:::{self.bucket_name}",
-                            f"arn:aws:s3:::{self.bucket_name}/*"
-                        ]
-                    },
-                    {
-                        "Sid": "AllowDataListing",
-                        "Effect": "Allow",
-                        "Principal": "*",
-                        "Action": "s3:ListBucket",
-                        "Resource": f"arn:aws:s3:::{self.bucket_name}",
-                        "Condition": {
-                            "StringEquals": {
-                                "s3:prefix": "data/"
-                            }
-                        }
-                    }
-                ]
-            }
-            
-            # Only set policy if bucket was just created or policy doesn't exist
-            try:
-                self.s3_client.put_bucket_policy(
-                    Bucket=self.bucket_name,
-                    Policy=json.dumps(bucket_policy)
-                )
-                logger.info(f"✅ Bucket policy configured")
-                return True
-            except ClientError as e:
-                if 'PolicyText' in str(e):
-                    logger.warning(f"Could not set bucket policy (may need manual IAM setup): {e}")
-                    return False
-                raise
-        
-        except Exception as e:
-            logger.error(f"Error configuring bucket policy: {e}")
-            return False
-    
     def generate_summary(self, uploaded_files: dict) -> str:
         """Generate summary of S3 setup for documentation"""
         summary = f"""
@@ -234,7 +176,7 @@ Uploaded Files:
 Configuration:
   ✅ Versioning: Enabled
   ✅ Data Prefix: data/
-  ✅ Access: Lambda/ECS services can read
+    ✅ Access: Lambda execution roles receive read access during tool deployment
 
 MCP Tools Can Now:
   - Read spare_parts_inventory.json from S3 (for get_spare_parts tool)
@@ -246,8 +188,8 @@ Local Agents Still Read From:
 
 Phase 2+ Migration:
   When agents move to AWS AgentCore Runtime:
-  - Agents read sensor data from: s3://agentic-ai-poc-3-1-sensor-data/devices/device-*.json
-  - MCP tools continue reading from: s3://{self.bucket_name}/mcp/spare_parts_inventory.json
+    - Agents read sensor data from: s3://agentic-ai-poc-3-1-sensor-data/devices/device-*.json
+    - MCP tools read from: s3://{self.bucket_name}/data/spare_parts_inventory.json
 """
         return summary
 
@@ -261,7 +203,8 @@ Examples:
   # Create bucket and upload MCP tools data to eu-central-1
   python scripts/setup_s3_for_mcp_tools.py \
     --bucket-name agentic-ai-poc-3-1-mcp-tools \
-    --data-dir data/mcp-tools
+        --data-dir data/mcp-tools \
+        --profile StandardAccess-450410489798
 
   # Use file filter to upload only spare parts inventory
   python scripts/setup_s3_for_mcp_tools.py \
@@ -295,7 +238,12 @@ Examples:
     parser.add_argument(
         '--region',
         default='eu-central-1',
-        help='AWS region for bucket (default: us-east-1)'
+        help='AWS region for bucket (default: eu-central-1)'
+    )
+    parser.add_argument(
+        '--profile',
+        default=os.getenv('AWS_PROFILE'),
+        help='AWS CLI profile to use (default: AWS_PROFILE environment variable)'
     )
     parser.add_argument(
         '--output-summary',
@@ -317,7 +265,8 @@ Examples:
         # Initialize S3 manager
         manager = S3DataManager(
             bucket_name=args.bucket_name,
-            region=args.region
+            region=args.region,
+            profile=args.profile
         )
         
         # Step 1: Create bucket
@@ -337,11 +286,11 @@ Examples:
             logger.error("No files uploaded")
             sys.exit(1)
         
-        # Step 3: Configure bucket policy
+        # Lambda read access is granted by its execution-role identity policy.
         logger.info("\n" + "=" * 60)
-        logger.info("Step 3: Configuring Bucket Policy")
+        logger.info("Step 3: Verifying Lambda access model")
         logger.info("=" * 60)
-        manager.configure_bucket_policy()
+        logger.info("S3 Block Public Access remains enabled; deploy_mcp_lambdas.py grants s3:GetObject to the Lambda role.")
         
         # Step 4: Generate summary
         logger.info("\n" + "=" * 60)

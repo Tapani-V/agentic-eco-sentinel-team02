@@ -11,9 +11,9 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
     env_file:
-      - .agentcore.env
+      - ${AGENT_ENV_FILE:-.agentcore.env}
     volumes:
-      - ~/.aws:/root/.aws
+      - ~/.aws:/root/.aws:ro
     networks:
       - agent-network
     healthcheck:
@@ -40,9 +40,9 @@ services:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
     env_file:
-      - .agentcore.env
+      - ${AGENT_ENV_FILE:-.agentcore.env}
     volumes:
-      - ~/.aws:/root/.aws
+      - ~/.aws:/root/.aws:ro
     networks:
       - agent-network
     depends_on:
@@ -74,9 +74,9 @@ services:
       - HEALTH_AGENT_URL=http://health-agent:8001
       - DIAGNOSIS_AGENT_URL=http://diagnosis-agent:8002
     env_file:
-      - .agentcore.env
+      - ${AGENT_ENV_FILE:-.agentcore.env}
     volumes:
-      - ~/.aws:/root/.aws
+      - ~/.aws:/root/.aws:ro
     networks:
       - agent-network
     depends_on:

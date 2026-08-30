@@ -488,14 +488,14 @@ Examples:
     
     parser.add_argument(
         '--profile',
-        default='StandardAccess-450410489798',
-        help='AWS SSO profile name'
+        default=None,
+        help='AWS SSO profile name (default: AWS_PROFILE from --env-file)'
     )
     
     parser.add_argument(
         '--region',
-        default='us-east-1',
-        help='AWS region'
+        default=None,
+        help='AWS region (default: AWS_REGION from --env-file, else us-east-1)'
     )
     
     parser.add_argument(
@@ -521,9 +521,12 @@ Examples:
     
     # Load env file before reading any env vars (e.g. TEAM_ID) below
     load_env_file(args.env_file)
+
+    profile = args.profile or os.getenv('AWS_PROFILE', 'StandardAccess-450410489798')
+    region = args.region or os.getenv('AWS_REGION', 'us-east-1')
     
     # Create deployer
-    deployer = BedrockAgentDeployer(profile=args.profile, region=args.region, team_id=args.team_id)
+    deployer = BedrockAgentDeployer(profile=profile, region=region, team_id=args.team_id)
     
     # Deploy agent(s)
     success = deployer.deploy_all(only_agents=[args.agent] if args.agent else None)

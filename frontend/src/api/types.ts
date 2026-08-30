@@ -36,6 +36,8 @@ export interface ProblematicDevice {
   equipment_type: string | null | undefined;
   health_status: HealthStatus | string;
   degradation_score: number | null | undefined;
+  action?: string;
+  mcp_tools_used?: string[];
 }
 
 export interface FleetSummary {

@@ -1111,7 +1111,7 @@
             if (window.lastFleetSummary && (Date.now() - window.lastFleetSummary.timestamp) < 60000) {
                 if (window.lastFleetSummary.data._analytics) {
                     analyticsData = {
-                        average_confidence: window.lastFleetSummary.data._analytics.average_confidence,
+                        average_remaining_health: window.lastFleetSummary.data._analytics.average_remaining_health,
                         average_degradation: window.lastFleetSummary.data._analytics.average_degradation,
                         total_devices_analyzed: window.lastFleetSummary.data._analytics.total_devices_analyzed,
                         devices_by_type: window.lastFleetSummary.data._analytics.devices_by_type,
@@ -1129,12 +1129,13 @@
             if (!analyticsData) return;
 
             const container = document.getElementById('analytics').querySelector('div');
+            const agentDecisions = window.lastFleetSummary?.data?._agent_decisions;
 
             let html = '<div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm);">';
             html += '<h2 style="color: var(--primary-blue); margin-bottom: 24px;">Analytics & Insights</h2>';
             
             html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">';
-            html += `<div class="kpi-card"><div class="kpi-label">Avg Confidence</div><div class="kpi-value" style="color: #00bcd4; font-weight: 800;">${(analyticsData.average_confidence * 100).toFixed(1)}%</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Avg Remaining Health</div><div class="kpi-value" style="color: #00bcd4; font-weight: 800;">${(analyticsData.average_remaining_health * 100).toFixed(1)}%</div></div>`;
             html += `<div class="kpi-card"><div class="kpi-label">Avg Degradation</div><div class="kpi-value" style="color: #ffc107; font-weight: 800;">${(analyticsData.average_degradation * 100).toFixed(1)}%</div></div>`;
             html += `<div class="kpi-card"><div class="kpi-label">Total Analyzed</div><div class="kpi-value" style="color: #1565c0; font-weight: 800;">${analyticsData.total_devices_analyzed}</div></div>`;
             html += '</div>';
@@ -1149,9 +1150,78 @@
                 html += '</div></div>';
             }
 
+            if (agentDecisions) {
+                const tools = agentDecisions.tool_counts || {};
+                const actionsByEquipment = agentDecisions.actions_by_equipment || {};
+                html += '<section style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-light);">';
+                html += '<h3 style="font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Agent Decision Overview</h3>';
+                html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">';
+                html += `<div class="kpi-card"><div class="kpi-label">HealthAgent Analyses</div><div class="kpi-value" style="color: #1565c0;">${agentDecisions.health_agent_analyses}</div></div>`;
+                html += `<div class="kpi-card"><div class="kpi-label">DiagnosisAgent Analyses</div><div class="kpi-value" style="color: #1565c0;">${agentDecisions.diagnosis_agent_analyses}</div></div>`;
+                html += `<div class="kpi-card"><div class="kpi-label">Urgent Repairs</div><div class="kpi-value" style="color: #2962cc;">${agentDecisions.urgent_repairs}</div></div>`;
+                html += `<div class="kpi-card"><div class="kpi-label">Maintenance Scheduled</div><div class="kpi-value" style="color: #00bcd4;">${agentDecisions.scheduled_maintenance}</div></div>`;
+                html += '</div>';
+                html += `<p style="margin: 16px 0; color: var(--text-secondary);">Spare-part validations: <strong>${tools['get-spare-parts'] || 0}</strong> &nbsp; Maintenance tool calls: <strong>${tools['schedule-maintenance'] || 0}</strong> &nbsp; Work orders created: <strong>${tools['create-work-order'] || 0}</strong></p>`;
+                html += '<h4 style="font-weight: 600; margin: 0 0 12px; color: var(--text-primary);">Diagnosis Actions by Equipment Type</h4>';
+                html += '<div style="height: 280px; position: relative;"><canvas id="agentActionChart"></canvas></div>';
+                html += '</section>';
+            }
+
             html += '</div>';
             container.innerHTML = html;
+            if (agentDecisions) renderAgentActionChart(agentDecisions.actions_by_equipment || {});
             updateLastUpdate();
+        }
+
+        function renderAgentActionChart(actionsByEquipment) {
+            if (typeof Chart === 'undefined') return;
+
+            const canvas = document.getElementById('agentActionChart');
+            if (!canvas) return;
+            if (charts.agentActions) charts.agentActions.destroy();
+
+            const equipmentTypes = Object.keys(actionsByEquipment).sort();
+            charts.agentActions = new Chart(canvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: equipmentTypes,
+                    datasets: [
+                        {
+                            label: 'Urgent Repair',
+                            data: equipmentTypes.map(type => actionsByEquipment[type].urgent_repair || 0),
+                            backgroundColor: '#2962cc',
+                            borderColor: '#2962cc',
+                            borderWidth: 1,
+                            borderRadius: 4,
+                        },
+                        {
+                            label: 'Scheduled Maintenance',
+                            data: equipmentTypes.map(type => actionsByEquipment[type].scheduled_maintenance || 0),
+                            backgroundColor: '#00bcd4',
+                            borderColor: '#00bcd4',
+                            borderWidth: 1,
+                            borderRadius: 4,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { stacked: true },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            ticks: { precision: 0 },
+                            title: { display: true, text: 'Devices' },
+                        },
+                    },
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: { mode: 'index', intersect: false },
+                    },
+                },
+            });
         }
 
         // ========== TAB DATA LOADING ==========

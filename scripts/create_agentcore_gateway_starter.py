@@ -5,18 +5,19 @@ Create AgentCore Gateway using the starter kit, set up Cognito OAuth, and output
 import os
 import json
 import argparse
+import re
 from dotenv import load_dotenv
 from bedrock_agentcore_starter_toolkit.operations.gateway.client import GatewayClient
 import boto3
 
-_arg_parser = argparse.ArgumentParser(add_help=False)
+_arg_parser = argparse.ArgumentParser()
 _arg_parser.add_argument(
     "--env-file",
     default=".agentcore.env",
     help="Path to the env file to load (default: .agentcore.env). Use this to point at a "
          "team-specific file (e.g. .agentcore.env.team01) without touching the original."
 )
-_args, _ = _arg_parser.parse_known_args()
+_args = _arg_parser.parse_args()
 
 load_dotenv(_args.env_file)
 
@@ -112,6 +113,23 @@ def create_gateway_execution_role():
         print(f"✓ Gateway execution role already exists: {role_name}")
     return role["Role"]["Arn"]
 
+
+def merge_env_values(env_file: str, values: dict) -> None:
+    """Update named environment variables without changing other entries."""
+    with open(env_file, "r") as file:
+        content = file.read()
+
+    for key, value in values.items():
+        pattern = rf"^{re.escape(key)}=.*$"
+        replacement = f"{key}={value}"
+        if re.search(pattern, content, flags=re.MULTILINE):
+            content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+        else:
+            content = content.rstrip("\n") + f"\n{replacement}\n"
+
+    with open(env_file, "w") as file:
+        file.write(content)
+
 def main():
     print("--- AgentCore Gateway Creation ---")
     if PROFILE:
@@ -166,6 +184,13 @@ def main():
             "role_arn": role_arn
         }, f, indent=2)
     print(f"✓ Gateway info saved to {gateway_info_file}")
+
+    merge_env_values(_args.env_file, {
+        "GATEWAY_URL": gateway_url,
+        "AGENTCORE_GATEWAY_ID": gateway_id,
+        "AGENTCORE_GATEWAY_ROLE_ARN": role_arn,
+    })
+    print(f"✓ Gateway settings saved to {_args.env_file}")
 
 if __name__ == "__main__":
     main()

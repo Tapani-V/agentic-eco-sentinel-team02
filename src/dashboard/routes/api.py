@@ -68,6 +68,45 @@ class DataCache:
 data_cache = DataCache()
 
 
+def build_agent_decisions(devices: List[Dict[str, Any]], total_devices: int, healthy_devices: int) -> Dict[str, Any]:
+    """Summarize live DiagnosisAgent actions and MCP tool usage for the dashboard."""
+    actions_by_equipment: Dict[str, Dict[str, int]] = {}
+    tool_counts = {
+        'get-spare-parts': 0,
+        'schedule-maintenance': 0,
+        'create-work-order': 0,
+    }
+    urgent_repairs = 0
+    scheduled_maintenance = 0
+
+    for device in devices:
+        equipment_type = device.get('equipment_type', 'UNKNOWN')
+        action = device.get('action')
+        equipment_actions = actions_by_equipment.setdefault(
+            equipment_type,
+            {'urgent_repair': 0, 'scheduled_maintenance': 0},
+        )
+        if action == 'URGENT_REPAIR':
+            urgent_repairs += 1
+            equipment_actions['urgent_repair'] += 1
+        elif action == 'SCHEDULE_MAINTENANCE':
+            scheduled_maintenance += 1
+            equipment_actions['scheduled_maintenance'] += 1
+
+        for tool_name in device.get('mcp_tools_used', []):
+            if tool_name in tool_counts:
+                tool_counts[tool_name] += 1
+
+    return {
+        'health_agent_analyses': total_devices,
+        'diagnosis_agent_analyses': max(0, total_devices - healthy_devices),
+        'urgent_repairs': urgent_repairs,
+        'scheduled_maintenance': scheduled_maintenance,
+        'tool_counts': tool_counts,
+        'actions_by_equipment': actions_by_equipment,
+    }
+
+
 # ============================================================================
 # REQUEST QUEUE - Prevent overlapping fetches (PRODUCTION GRADE)
 # ============================================================================
@@ -548,7 +587,7 @@ async def fleet_summary():
         # (Parallel requests overwhelm the diagnosis agent)
         health_statuses = {}
         device_details = {}  # Store full device details for problematic devices
-        confidence_scores = []
+        degradation_scores = []
         equipment_counts = {}
         
         # Aggregate MCP tool results
@@ -563,7 +602,7 @@ async def fleet_summary():
                 status = device_data.get('health_status', 'unknown')
                 health_statuses[device_id] = status
                 confidence = device_data.get('confidence', 0)
-                confidence_scores.append(confidence)
+                degradation_scores.append(device_data.get('degradation_score', 0))
                 
                 equipment_type = device_id.split('-')[0].upper()
                 equipment_counts[equipment_type] = equipment_counts.get(equipment_type, 0) + 1
@@ -591,6 +630,8 @@ async def fleet_summary():
                         'degradation_score': round(1 - confidence, 3),
                         'diagnosis': device_data.get('diagnosis', ''),
                         'recommendation': device_data.get('recommendation_details', ''),
+                        'action': device_data.get('action'),
+                        'mcp_tools_used': device_data.get('mcp_tools_used', []),
                     }
                 
                 # Extract MCP tool results for this device
@@ -622,8 +663,8 @@ async def fleet_summary():
         critical = sum(1 for status in health_statuses.values() if status == 'critical')
         
         # Calculate analytics metrics
-        avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
-        avg_degradation = 1 - avg_confidence
+        avg_degradation = sum(degradation_scores) / len(degradation_scores) if degradation_scores else 0
+        avg_remaining_health = 1 - avg_degradation
         
         # If some devices didn't respond, log it. Percentage is based on devices
         # that actually responded, not the full fleet count - otherwise transient
@@ -635,7 +676,7 @@ async def fleet_summary():
         
         logger.info(f"✅ Fleet: {healthy}/{total} healthy, {warning} warning, {critical} critical")
         logger.info(f"📋 Work Orders: {len(all_work_orders)} | Maintenance: {len(all_maintenance_schedules)} | Spare Parts: {len(all_spare_parts)}")
-        logger.debug(f"📊 Analytics: {avg_confidence:.2%} avg confidence, {list(equipment_counts.keys())} equipment types")
+        logger.debug(f"📊 Analytics: {avg_remaining_health:.2%} avg remaining health, {list(equipment_counts.keys())} equipment types")
         
         # Sort problematic devices by criticality (critical first, then warning)
         sorted_problematic = sorted(
@@ -667,10 +708,15 @@ async def fleet_summary():
             },
             "_analytics": {
                 "average_degradation": round(avg_degradation, 3),
-                "average_confidence": round(avg_confidence, 3),
+                "average_remaining_health": round(avg_remaining_health, 3),
                 "total_devices_analyzed": len(device_ids),
                 "devices_by_type": equipment_counts,
-            }
+            },
+            "_agent_decisions": build_agent_decisions(
+                sorted_problematic,
+                total,
+                healthy,
+            ),
         }
         
         # Cache the result
@@ -847,7 +893,7 @@ async def hard_refresh_cache():
         logger.info(f"🔄 Hard refresh: fetching {len(device_ids)} devices")
         
         health_statuses = {}
-        confidence_scores = []
+        degradation_scores = []
         equipment_counts = {}
         
         # Aggregate MCP tool results
@@ -859,7 +905,7 @@ async def hard_refresh_cache():
             device_data = await orchestrator.get(f"/devices/{device_id}")
             if device_data:
                 health_statuses[device_id] = device_data.get('health_status', 'unknown')
-                confidence_scores.append(device_data.get('confidence', 0))
+                degradation_scores.append(device_data.get('degradation_score', 0))
                 equipment_type = device_id.split('-')[0].upper()
                 equipment_counts[equipment_type] = equipment_counts.get(equipment_type, 0) + 1
                 
@@ -888,8 +934,8 @@ async def hard_refresh_cache():
         if responded < total:
             logger.warning(f"⚠️  Only {responded}/{total} devices responded ({total - responded} timeouts)")
         
-        avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
-        avg_degradation = 1 - avg_confidence
+        avg_degradation = sum(degradation_scores) / len(degradation_scores) if degradation_scores else 0
+        avg_remaining_health = 1 - avg_degradation
         health_percent = round((healthy / responded * 100)) if responded > 0 else 0
         
         result = {
@@ -908,7 +954,7 @@ async def hard_refresh_cache():
             },
             "_analytics": {
                 "average_degradation": round(avg_degradation, 3),
-                "average_confidence": round(avg_confidence, 3),
+                "average_remaining_health": round(avg_remaining_health, 3),
                 "total_devices_analyzed": len(device_ids),
                 "devices_by_type": equipment_counts,
             },
@@ -1402,7 +1448,7 @@ async def analytics_overview():
         # Return only the analytics portion
         return {
             "average_degradation": cached["_analytics"]["average_degradation"],
-            "average_confidence": cached["_analytics"]["average_confidence"],
+            "average_remaining_health": cached["_analytics"]["average_remaining_health"],
             "total_devices_analyzed": cached["_analytics"]["total_devices_analyzed"],
             "devices_by_type": cached["_analytics"]["devices_by_type"],
             "trend": "stable",
@@ -1429,29 +1475,27 @@ async def analytics_overview():
     
     device_ids = devices_list_data.get('devices', [])
     
-    # Fetch confidence scores for analytics
-    confidence_scores = []
+    # Fetch HealthAgent degradation scores for analytics
+    degradation_scores = []
     equipment_counts = {}
     
     for device_id in device_ids:
         device_data = await orchestrator.get(f"/devices/{device_id}")
         
         if device_data:
-            confidence = device_data.get('confidence', 0)
-            confidence_scores.append(confidence)
+            degradation_scores.append(device_data.get('degradation_score', 0))
             
             equipment_type = device_id.split('-')[0].upper()
             equipment_counts[equipment_type] = equipment_counts.get(equipment_type, 0) + 1
     
-    # Calculate average confidence (inverse of degradation)
-    avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
-    avg_degradation = 1 - avg_confidence
+    avg_degradation = sum(degradation_scores) / len(degradation_scores) if degradation_scores else 0
+    avg_remaining_health = 1 - avg_degradation
     
-    logger.info(f"✅ Analytics: avg confidence {avg_confidence:.2%}, equipment types: {equipment_counts}")
+    logger.info(f"✅ Analytics: avg remaining health {avg_remaining_health:.2%}, equipment types: {equipment_counts}")
     
     return {
         "average_degradation": round(avg_degradation, 3),
-        "average_confidence": round(avg_confidence, 3),
+        "average_remaining_health": round(avg_remaining_health, 3),
         "total_devices_analyzed": len(device_ids),
         "devices_by_type": equipment_counts,
         "trend": "stable",

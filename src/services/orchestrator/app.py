@@ -56,6 +56,7 @@ class OrchestratorResponse(BaseModel):
     """Final response from orchestrator."""
     device_id: str
     health_status: str
+    degradation_score: float
     diagnosis: str = None
     confidence: float = None
     confidence_rule_based: Optional[float] = None
@@ -280,6 +281,7 @@ async def process_device_from_file(device_id: str) -> OrchestratorResponse:
         response = OrchestratorResponse(
             device_id=result['device_id'],
             health_status=result['health_status'],
+            degradation_score=result['degradation_score'],
             diagnosis=result['diagnosis'],
             confidence=result['confidence'],
             confidence_rule_based=result.get('confidence_rule_based'),

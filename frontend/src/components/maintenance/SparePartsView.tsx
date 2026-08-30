@@ -34,10 +34,10 @@ export function SparePartsView() {
 
 function SparePartsContent({ data }: { data: SparePartsResponse }) {
   const cards = [
-    { label: 'Total', value: numberOr0(data.total) },
-    { label: 'In Stock', value: numberOr0(data.by_availability.in_stock) },
-    { label: 'On Order', value: numberOr0(data.by_availability.on_order) },
-    { label: 'Critical Unavailable', value: numberOr0(data.critical_parts_unavailable) },
+    { label: 'Total', value: numberOr0(data.total), color: 'default' as const },
+    { label: 'In Stock', value: numberOr0(data.by_availability.in_stock), color: 'green' as const },
+    { label: 'On Order', value: numberOr0(data.by_availability.on_order), color: 'gold' as const },
+    { label: 'Critical Unavailable', value: numberOr0(data.critical_parts_unavailable), color: 'red' as const },
   ];
 
   return (
@@ -57,7 +57,6 @@ function SparePartsContent({ data }: { data: SparePartsResponse }) {
             <span className="maintenance-row__field">Qty: {numberOr0(part.quantity_available)}</span>
             <span className="maintenance-row__field">{numberOr0(part.lead_time_days)}d</span>
             <span className="maintenance-row__cost">{formatMoney(part.unit_cost, 2)}</span>
-            <span className="maintenance-row__field">{textOr(part.criticality, 'UNKNOWN').toUpperCase()}</span>
           </div>
         ))}
       </div>

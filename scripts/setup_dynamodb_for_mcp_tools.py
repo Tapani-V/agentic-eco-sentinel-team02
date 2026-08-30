@@ -9,7 +9,7 @@ Purpose:
 - Configure tables with proper attributes and billing
 
 Usage:
-    python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01 --region eu-central-1
+    python scripts/setup_dynamodb_for_mcp_tools.py --env-file .agentcore.env.team01
 
 This script:
 1. Creates <team_id>-maintenance-schedules table
@@ -28,6 +28,7 @@ from typing import Dict
 
 import boto3
 from botocore.exceptions import ClientError
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
@@ -40,13 +41,14 @@ logger = logging.getLogger(__name__)
 class DynamoDBTableManager:
     """Manages DynamoDB table creation for MCP tools"""
     
-    def __init__(self, team_id: str, region: str = 'eu-central-1'):
+    def __init__(self, team_id: str, region: str = 'eu-central-1', profile: str = None):
         self.team_id = team_id
         self.region = region
         self.maintenance_table_name = f'{team_id}-maintenance-schedules'
         self.work_orders_table_name = f'{team_id}-work-orders'
-        self.dynamodb_client = boto3.client('dynamodb', region_name=region)
-        self.dynamodb_resource = boto3.resource('dynamodb', region_name=region)
+        session = boto3.Session(profile_name=profile, region_name=region) if profile else boto3.Session(region_name=region)
+        self.dynamodb_client = session.client('dynamodb')
+        self.dynamodb_resource = session.resource('dynamodb')
     
     def table_exists(self, table_name: str) -> bool:
         """Check if DynamoDB table exists"""
@@ -264,29 +266,39 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Create tables for team01 in eu-central-1
-  python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01
+    # Create tables using a team-specific environment file
+    python scripts/setup_dynamodb_for_mcp_tools.py --env-file .agentcore.env.team01
 
   # Use different region
-  python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01 --region us-west-2
+    python scripts/setup_dynamodb_for_mcp_tools.py --env-file .agentcore.env.team01 --region us-west-2
 
   # Save summary to file
-  python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01 --output-summary dynamodb_setup_summary.txt
+    python scripts/setup_dynamodb_for_mcp_tools.py --env-file .agentcore.env.team01 --output-summary dynamodb_setup_summary.txt
 
   # Verbose output
-  python scripts/setup_dynamodb_for_mcp_tools.py --team-id team01 --verbose
+    python scripts/setup_dynamodb_for_mcp_tools.py --env-file .agentcore.env.team01 --verbose
         """
     )
     
     parser.add_argument(
         '--team-id',
-        default=os.getenv('TEAM_ID'),
-        help='Team namespace prefix for table names, e.g. team01 (default: $TEAM_ID env var). Required.'
+        default=None,
+        help='Team namespace prefix for table names, e.g. team01 (default: TEAM_ID from --env-file). Required.'
     )
     parser.add_argument(
         '--region',
-        default='eu-central-1',
-        help='AWS region for tables (default: eu-central-1)'
+        default=None,
+        help='AWS region for tables (default: AWS_REGION from --env-file, else eu-central-1)'
+    )
+    parser.add_argument(
+        '--profile',
+        default=None,
+        help='AWS CLI profile to use (default: AWS_PROFILE from --env-file)'
+    )
+    parser.add_argument(
+        '--env-file',
+        default='.agentcore.env',
+        help='Path to the env file to load (default: .agentcore.env)'
     )
     parser.add_argument(
         '--output-summary',
@@ -300,16 +312,20 @@ Examples:
     )
     
     args = parser.parse_args()
+    load_dotenv(args.env_file)
+    team_id = args.team_id or os.getenv('TEAM_ID')
+    region = args.region or os.getenv('AWS_REGION', 'eu-central-1')
+    profile = args.profile or os.getenv('AWS_PROFILE')
     
-    if not args.team_id:
-        parser.error("--team-id is required (or set the TEAM_ID env var) - it names every table this script creates, for full per-team isolation.")
+    if not team_id:
+        parser.error("--team-id is required (or set TEAM_ID in --env-file) - it names every table this script creates, for full per-team isolation.")
     
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
     try:
         # Initialize DynamoDB manager
-        manager = DynamoDBTableManager(team_id=args.team_id, region=args.region)
+        manager = DynamoDBTableManager(team_id=team_id, region=region, profile=profile)
         
         # Step 1: Create maintenance_schedules table
         logger.info("=" * 60)

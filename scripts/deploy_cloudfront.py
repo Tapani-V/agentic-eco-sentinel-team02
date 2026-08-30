@@ -340,7 +340,10 @@ def main():
     log("=" * 60)
 
     # Initialize AWS clients
-    session = boto3.Session(region_name=os.getenv("AWS_REGION", "eu-central-1"))
+    profile = os.getenv("AWS_PROFILE")
+    region = os.getenv("AWS_REGION", "eu-central-1")
+    session = boto3.Session(profile_name=profile, region_name=region) if profile else boto3.Session(region_name=region)
+    log(f"AWS region: {region}" + (f" | profile: {profile}" if profile else " | default credentials"))
     cf_client = session.client("cloudformation")
     s3_client = session.client("s3")
     cloudfront_client = session.client("cloudfront")

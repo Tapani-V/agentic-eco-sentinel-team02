@@ -13,15 +13,12 @@ so the same script can be pointed at any region/team's pool (e.g. Frankfurt)
 without touching another region/team's env file. With no flags, behavior is
 unchanged from the original North Virginia (.agentcore.env) setup.
 
-After running this script you must update the gateway so its allowedClients
-includes the new confidential client ID:
-  python scripts/create_agentcore_gateway_starter.py
+After running this script, create the Gateway with the new confidential client
+ID in its allowedClients configuration:
+    python scripts/create_agentcore_gateway_starter.py --env-file .agentcore.env.<team_id>
 
-Then re-register tools:
-  python scripts/register_mcp_tools_starter.py
-
-Then test end-to-end:
-  python scripts/test_agentcore_gateway_starter.py
+Then register the MCP tools after their backends have been deployed:
+    python scripts/register_mcp_tools_starter.py --env-file .agentcore.env.<team_id>
 
 Usage:
   python scripts/setup_cognito_token_flow.py \
@@ -232,21 +229,17 @@ def main():
     print("\n" + "=" * 60)
     print("  ✅ Cognito token flow setup complete!")
     print("=" * 60)
-    print("""
-⚠️  IMPORTANT: Gateway must be recreated so its allowedClients
-    includes the new confidential client ID.
+    print(f"""
+Next step: create the AgentCore Gateway using this client ID:
+    python scripts/create_agentcore_gateway_starter.py --env-file {args.env_file}
 
-    Next steps:
-    1. Delete existing gateway targets + gateway (section 6g):
-         python scripts/create_agentcore_gateway_starter.py
-       (If gateway already exists it will be reused. To force
-        recreation, delete first — see section 6g in step-by-step.)
+The Gateway's allowedClients list is set when the Gateway is created. If this
+is a fresh team setup, create it now. If a Gateway already exists for this
+team, delete its targets and Gateway first, then create it again so it trusts
+the client created above.
 
-    2. Re-register tools:
-         python scripts/register_mcp_tools_starter.py
-
-    3. Run full data-plane test:
-         python scripts/test_agentcore_gateway_starter.py
+After deploying the MCP tool backends, register them:
+    python scripts/register_mcp_tools_starter.py --env-file {args.env_file}
 """)
 
 

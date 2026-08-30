@@ -1,7 +1,7 @@
 export interface SummaryCardEntry {
   label: string;
   value: string | number;
-  color?: 'red' | 'gold' | 'blue' | 'default';
+  color?: 'red' | 'gold' | 'green' | 'blue' | 'default';
 }
 
 export interface SummaryCardsProps {

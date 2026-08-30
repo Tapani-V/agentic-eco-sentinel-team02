@@ -8,14 +8,14 @@ import argparse
 from dotenv import load_dotenv
 from bedrock_agentcore_starter_toolkit.operations.gateway.client import GatewayClient
 
-_arg_parser = argparse.ArgumentParser(add_help=False)
+_arg_parser = argparse.ArgumentParser()
 _arg_parser.add_argument(
     "--env-file",
     default=".agentcore.env",
     help="Path to the env file to load (default: .agentcore.env). Use this to point at a "
          "team-specific file (e.g. .agentcore.env.team01) without touching the original."
 )
-_args, _ = _arg_parser.parse_known_args()
+_args = _arg_parser.parse_args()
 
 load_dotenv(_args.env_file)
 
@@ -29,11 +29,10 @@ CREATE_WORK_ORDER_URL = os.getenv("CREATE_WORK_ORDER_URL")
 if PROFILE:
     os.environ["AWS_PROFILE"] = PROFILE
 
-# Team-specific gateway_info file keeps each team's Gateway details isolated
-# (falls back to the shared filename when TEAM_ID isn't set).
-GATEWAY_INFO_FILE = f"gateway_info.{TEAM_ID}.json" if TEAM_ID else "gateway_info.json"
-with open(GATEWAY_INFO_FILE) as f:
-    gateway_info = json.load(f)
+# Team-specific gateway info is written by create_agentcore_gateway_starter.py.
+gateway_info_file = f"gateway_info.{TEAM_ID}.json" if TEAM_ID else "gateway_info.json"
+with open(gateway_info_file) as file:
+    gateway_info = json.load(file)
 GATEWAY_ID = gateway_info["gateway_id"]
 GATEWAY_ROLE_ARN = gateway_info.get("role_arn", "")
 

@@ -51,6 +51,13 @@ Cognito, and DynamoDB — there is no local/mock version of these. They authenti
 your host machine's AWS credentials (`~/.aws` is mounted read-only into each container)
 and `.agentcore.env` (copy from `.agentcore.env.example` if you don't have one).
 
+To run local agents against a team-specific Frankfurt Cognito, Gateway, and MCP-tool
+deployment, select that team's env file when starting Compose:
+
+```bash
+AGENT_ENV_FILE=.agentcore.env.team01 docker-compose up -d --build
+```
+
 ## Run on AWS Bedrock AgentCore Runtime
 
 This is only needed if you want your agents hosted on AWS instead of run locally — for

@@ -17,7 +17,7 @@ export function KpiPanel(): React.JSX.Element {
     <div className="kpi-grid">
       <KpiCard
         label="Fleet Health"
-        value={data ? `${numberOr0(data.healthy_devices)} (${numberOr0(data.fleet_health_percent)}%)` : loading}
+        value={data ? String(numberOr0(data.healthy_devices)) : loading}
         subtext="Devices Healthy"
         variant="healthy"
       />

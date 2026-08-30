@@ -41,28 +41,152 @@ original North Virginia reference setup.
 | Step(s) | Env file | Why |
 |---|---|---|
 | 1 (`cognito_setup.py`) | `.env.<team_id>` | Uses the `Config(env_file=...)` loader (separate from the `.agentcore.env` convention used by every other script) |
-| 2–6 (`setup_cognito_token_flow.py`, `create_agentcore_gateway_starter.py`, `register_mcp_tools_starter.py`, `build_and_push.sh`, `deploy_to_agentcore_boto3.py`) | `.agentcore.env.<team_id>` | All read/write Cognito, Gateway, and Runtime values via this file; step 1 auto-persists `COGNITO_USER_POOL_ID` into it so step 2 onward never needs manual copying |
-| 3a/3b (work-order App Runner scripts) | none (CLI flags only: `--region`/`--profile`/`--service-name`) | Not env-file driven — pass `--region`/`--profile` explicitly |
-| 3c (`setup_dynamodb_for_mcp_tools.py`) | none (CLI flag: `--team-id`, falls back to `$TEAM_ID`) | Not env-file driven — pass `--team-id`/`--region` explicitly |
-| 3d (`deploy_mcp_lambdas.py`) | `.agentcore.env.<team_id>` | Reads `TEAM_ID`, `AWS_REGION`, `AWS_PROFILE`, `AWS_ACCOUNT_ID`, `PERMISSION_BOUNDARY` to build every resource name/ARN it creates |
-| 7–8 (`deploy_lambda_api_gateway_fastapi.py`, `deploy_cloudfront.py`) | none (CLI args / shell env vars only) | Read prior steps' JSON output files instead |
+| 2, 3, 6, 8, 9 (`setup_cognito_token_flow.py`, `create_agentcore_gateway_starter.py`, `deploy_mcp_lambdas.py`, `register_mcp_tools_starter.py`, `build_and_push.sh`, `deploy_to_agentcore_boto3.py`) | `.agentcore.env.<team_id>` | Stores the team-specific Cognito, Gateway, MCP Lambda, and Runtime values; steps 1, 2, 3, and 6 write their generated values automatically |
+| 4 (MCP tools S3) | none (CLI flags: `--bucket-name`/`--region`/`--profile`) | Not env-file driven; uses its explicit AWS CLI profile |
+| 7 (App Runner) | `.agentcore.env.<team_id>` via `--env-file` | Waits for the generated service URL and automatically saves it as `CREATE_WORK_ORDER_URL` before step 8 |
+| 5 (`setup_dynamodb_for_mcp_tools.py`) | `.agentcore.env.<team_id>` | Reads `TEAM_ID`, `AWS_REGION`, and `AWS_PROFILE`, with CLI flags available as explicit overrides |
+| 10 (`deploy_lambda_api_gateway_fastapi.py`, `deploy_cloudfront.py`) | none (CLI args / shell env vars only) | Reads the `agent_endpoints.<team_id>.json` output from step 9 |
 
-## Script order
+## Team01 Frankfurt runbook
 
-| # | Command | Purpose | Reads | Produces / manual follow-up |
-|---|---|---|---|---|
-| 1 | `python scripts/cognito_setup.py --env-file .env.<team_id>` | Create this team's own Cognito User Pool | `.env.<team_id>`: `COGNITO_USER_POOL_NAME`, `AWS_REGION`, etc. (via `Config(env_file=...)`) | Automatically persists `COGNITO_USER_POOL_ID` into `.agentcore.env.<team_id>` (derived from `--env-file`, or override with `--agentcore-env-file`) — no manual copy step needed. |
-| 2 | `python scripts/setup_cognito_token_flow.py --env-file .agentcore.env.<team_id>` | Create resource server (`agentcore/invoke` scope) + hosted domain + confidential app client | `.agentcore.env.<team_id>`: `AWS_REGION`, `AWS_PROFILE`, `COGNITO_USER_POOL_ID` (auto-persisted by step 1), `COGNITO_DOMAIN_PREFIX`, `COGNITO_CLIENT_NAME` (all pre-filled during Phase B env prep, so no CLI flags are required — `--region`/`--user-pool-id`/`--domain-prefix`/`--client-name` remain available as one-off overrides if you need to deviate from the env file) | Merges `COGNITO_APP_CLIENT_ID`, `COGNITO_APP_CLIENT_SECRET`, `COGNITO_TOKEN_ENDPOINT`, `COGNITO_SCOPE`, `COGNITO_DOMAIN_PREFIX` directly into `.agentcore.env.<team_id>` (targeted line-replace, doesn't touch other keys) |
-| 3 | `python scripts/create_agentcore_gateway_starter.py --env-file .agentcore.env.<team_id>` | Create this team's own MCP Gateway, authorized for the new client | `.agentcore.env.<team_id>`: `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID`, `AWS_REGION`, `AWS_PROFILE`, `PERMISSION_BOUNDARY`, `AWS_ACCOUNT_ID`, `TEAM_ID` | Writes `gateway_info.<team_id>.json` (team-specific since 2026-08-30 — `GATEWAY_NAME` derives from `TEAM_ID`); prints `GATEWAY_URL` — **manual step:** add `GATEWAY_URL=<value>` to `.agentcore.env.<team_id>` |
-| 3a | `docker build -t create-work-order:latest src/ecs_tasks/create_work_order/` then `bash scripts/push_create_work_order_to_ecr.sh --region <region> --profile <profile>` | Push the `create-work-order` FastAPI image to an ECR repo **in the new team's region** (a private ECR image must be in the same region as the App Runner service pulling it — can't reuse the `us-east-1` repo cross-region) | Local Docker image `create-work-order:latest` | Creates/uses ECR repo `create-work-order` in `<region>`, pushes `:latest` |
-| 3b | `bash scripts/deploy_create_work_order_apprunner.sh --region <region> --service-name <team>-create-work-order-apprunner <ECR_IMAGE_URL> <ECR_PULL_ROLE_ARN> <profile>` | Deploy that image as an App Runner service in `<region>` | Step 3a's ECR image URL; the existing `apprunner-ecr-pull-role` ARN (IAM roles are account-wide — **reuse it, do not re-run `create_apprunner_ecr_pull_role.py`**) | **Manual step:** poll `aws apprunner describe-service --service-arn <arn> --region <region>` until `Status` is `RUNNING`, then add `CREATE_WORK_ORDER_URL=https://<ServiceUrl>` to `.agentcore.env.<team_id>` |
-| 3c | `python scripts/setup_dynamodb_for_mcp_tools.py --team-id <team> --region <region>` | Create this team's own `<team>-maintenance-schedules` and `<team>-work-orders` DynamoDB tables (fully isolated model — since 2026-08-30, generalized from the old hardcoded `team01-*` names via `--team-id`) | Nothing (pure AWS API calls) | Two tables in `<region>`; safe to re-run (skips creation if the table already exists) |
-| 3d | `python scripts/deploy_mcp_lambdas.py --env-file .agentcore.env.<team_id>` | Deploy this team's own `<team>-get-spare-parts` and `<team>-schedule-maintenance` Lambda functions + `<team>-mcp-tools-lambda-role` IAM role (fully isolated model — since 2026-08-30, generalized from the old hardcoded `team01-*` names via `TEAM_ID`) | `.agentcore.env.<team_id>`: `TEAM_ID`, `AWS_REGION`, `AWS_PROFILE`, `AWS_ACCOUNT_ID`, `PERMISSION_BOUNDARY`; packages code from `tools/lambdas/get_spare_parts_handler.py` / `schedule_maintenance_handler.py` | Creates/updates the 2 Lambda functions, tests each with a sample invocation. **Manual step:** copy the printed Lambda ARNs into `.agentcore.env.<team_id>` as `GET_SPARE_PARTS_LAMBDA_ARN` / `SCHEDULE_MAINTENANCE_LAMBDA_ARN` (replacing the old cross-region `us-east-1` placeholder values) |
-| 4 | `python scripts/register_mcp_tools_starter.py --env-file .agentcore.env.<team_id>` | Register the 3 MCP tool targets: `get-spare-parts`, `schedule-maintenance`, `create-work-order` | `.agentcore.env.<team_id>`: `GET_SPARE_PARTS_LAMBDA_ARN`, `SCHEDULE_MAINTENANCE_LAMBDA_ARN` (now this team's own Lambdas from step 3d, same region), `CREATE_WORK_ORDER_URL`, `TEAM_ID`; also reads `gateway_info.<team_id>.json` (step 3 output) | All 3 MCP tools are now deployed per-team, per-region (steps 3a/3b for `create-work-order`, steps 3c/3d for the other two) — no more cross-region shared-infra assumption |
-| 5 | `deployment/agentcore-runtime/build_and_push.sh --env-file .agentcore.env.<team_id> [agent-name]` | Build ARM64 Docker images, push to ECR tagged `:<team_id>` | `.agentcore.env.<team_id>`: `TEAM_ID`, `AWS_ACCOUNT_ID`, `AWS_REGION` | Pushes images to ECR — skip if reusing unchanged images |
-| 6 | `python scripts/deploy_to_agentcore_boto3.py --team-id <team> --region <region> --env-file .agentcore.env.<team_id>` | Deploy/update the 3 AgentCore Runtimes (health_agent, diagnosis_agent, orchestrator) | `.agentcore.env.<team_id>`: `TEAM_ID`, `COGNITO_APP_CLIENT_ID/SECRET`, `COGNITO_TOKEN_ENDPOINT`, `COGNITO_SCOPE`, `GATEWAY_URL` | Writes `agent_endpoints.<team_id>.json` (runtime IDs) — already team-specific and gitignored |
-| 7 | `python scripts/deploy_lambda_api_gateway_fastapi.py --team-id <team> --region <region>` *(new script, added 2026-08-28)* | Deploy the FastAPI+Mangum orchestrator Lambda + REST API Gateway | `agent_endpoints.<team_id>.json` (step 6 output); creates its own IAM role `<team>-lambda-execution-role` | Writes `api_gateway_endpoints.<team_id>.json` (`domain`, `stage`, `invoke_url`) |
-| 8 | `RESOURCE_PREFIX="<team>-" API_GATEWAY_DOMAIN="<domain from step 7>" API_GATEWAY_STAGE_PATH="/prod" python scripts/deploy_cloudfront.py` | Deploy CloudFront + S3 + React dashboard | Env vars only (no file) | Prints the CloudFront dashboard URL. **Must run after step 7** — API Gateway's domain is a fixed CloudFormation parameter baked in at stack-create time |
+Run these commands from the repository root, in order. They use the fixed team01
+values: region `eu-central-1`, profile `StandardAccess-450410489798`, and account
+`450410489798`. The env files are gitignored because they contain the Cognito client
+secret; never commit them.
+
+### 0. Confirm the AWS account
+
+```bash
+aws sts get-caller-identity --profile StandardAccess-450410489798 --region eu-central-1
+```
+
+The returned account must be `450410489798`.
+
+### 1. Create Cognito User Pool
+
+```bash
+python3 scripts/cognito_setup.py --env-file .env.team01
+```
+
+Creates `team01-user-pool` and automatically saves `COGNITO_USER_POOL_ID` to
+`.agentcore.env.team01`.
+
+### 2. Configure Cognito client-credentials OAuth
+
+```bash
+python3 scripts/setup_cognito_token_flow.py --env-file .agentcore.env.team01
+```
+
+Creates the `agentcore/invoke` scope, `team01-auth` domain, and
+`team01-confidential-client`; automatically saves the client ID, client secret, token
+endpoint, and scope to `.agentcore.env.team01`.
+
+### 3. Create the team01 AgentCore Gateway
+
+```bash
+python3 scripts/create_agentcore_gateway_starter.py --env-file .agentcore.env.team01
+```
+
+Creates `team01-mcp-gateway`, writes `gateway_info.team01.json`, and automatically
+saves `GATEWAY_URL`, `AGENTCORE_GATEWAY_ID`, and `AGENTCORE_GATEWAY_ROLE_ARN` to
+`.agentcore.env.team01`.
+
+### 4. Upload the spare-parts inventory
+
+```bash
+python3 scripts/setup_s3_for_mcp_tools.py \
+  --bucket-name team01-mcp-tools \
+  --data-dir data/mcp-tools \
+  --region eu-central-1 \
+  --profile StandardAccess-450410489798
+```
+
+Uploads `data/mcp-tools/spare_parts_inventory.json` to
+`s3://team01-mcp-tools/data/spare_parts_inventory.json`.
+
+### 5. Create MCP tool DynamoDB tables
+
+```bash
+python3 scripts/setup_dynamodb_for_mcp_tools.py --env-file .agentcore.env.team01
+```
+
+Creates `team01-maintenance-schedules` and `team01-work-orders`.
+
+### 6. Deploy Lambda-backed MCP tools
+
+```bash
+python3 scripts/deploy_mcp_lambdas.py --env-file .agentcore.env.team01
+```
+
+Creates `team01-get-spare-parts` and `team01-schedule-maintenance`, tests them, and
+automatically saves both Lambda ARNs to `.agentcore.env.team01`.
+
+### 7. Deploy the create-work-order App Runner service
+
+```bash
+docker build -t create-work-order:latest src/ecs_tasks/create_work_order/
+
+bash scripts/push_create_work_order_to_ecr.sh \
+  --region eu-central-1 \
+  --profile StandardAccess-450410489798
+
+bash scripts/deploy_create_work_order_apprunner.sh \
+  --region eu-central-1 \
+  --service-name team01-create-work-order-apprunner \
+  --env-file .agentcore.env.team01 \
+  450410489798.dkr.ecr.eu-central-1.amazonaws.com/create-work-order:latest \
+  arn:aws:iam::450410489798:role/apprunner-ecr-pull-role \
+  StandardAccess-450410489798
+```
+
+The script waits for the service to become `RUNNING` and automatically saves its
+generated URL as `CREATE_WORK_ORDER_URL=https://<ServiceUrl>/work_order` in
+`.agentcore.env.team01`.
+
+### 8. Register all MCP tools
+
+```bash
+python3 scripts/register_mcp_tools_starter.py --env-file .agentcore.env.team01
+```
+
+Registers `get-spare-parts`, `schedule-maintenance`, and `create-work-order` on
+`team01-mcp-gateway`. The script reads the team-specific
+`gateway_info.team01.json` file written by step 3.
+
+### 9. Deploy AgentCore Runtimes
+
+```bash
+deployment/agentcore-runtime/build_and_push.sh --env-file .agentcore.env.team01
+
+python3 scripts/deploy_to_agentcore_boto3.py \
+  --env-file .agentcore.env.team01
+```
+
+Builds and deploys the health, diagnosis, and orchestrator AgentCore Runtimes, then
+writes `agent_endpoints.team01.json`. The script reads `TEAM_ID`, `AWS_REGION`, and
+`AWS_PROFILE` from the selected env file; `--team-id`, `--region`, and `--profile`
+remain available as explicit overrides.
+
+### 10. Deploy dashboard Lambda, API Gateway, and CloudFront
+
+```bash
+python3 scripts/deploy_lambda_api_gateway_fastapi.py \
+  --team-id team01 \
+  --region eu-central-1 \
+  --profile StandardAccess-450410489798
+```
+
+Use the `domain` in `api_gateway_endpoints.team01.json` in the final CloudFront
+deployment command:
+
+```bash
+RESOURCE_PREFIX="team01-" \
+API_GATEWAY_DOMAIN="smxdpw59j6.execute-api.eu-central-1.amazonaws.com" \
+API_GATEWAY_STAGE_PATH="/prod" \
+AWS_REGION="eu-central-1" \
+AWS_PROFILE="StandardAccess-450410489798" \
+python3 scripts/deploy_cloudfront.py
+```
 
 ## Known gaps / not yet automated
 
@@ -90,16 +214,15 @@ original North Virginia reference setup.
 - ~~`deploy_mcp_lambdas.py`/`setup_dynamodb_for_mcp_tools.py` hardcoded `team01-*`~~
   **Fixed 2026-08-30:** both scripts now derive every resource name
   (Lambda functions, IAM role/policy, DynamoDB tables, S3 bucket ARN) from
-  `TEAM_ID`/`--team-id` instead of a literal `"team01"` string, and are now
-  wired into the script order as steps 3c/3d, ahead of step 4's Gateway
-  registration.
+  `TEAM_ID`/`--team-id` instead of a literal `"team01"` string. They are
+  documented as steps 5 and 6 of the Team01 Frankfurt runbook.
 - **DynamoDB table** `<team_id>-conversation-memory` and **S3 bucket**
   `<team_id>-synthetic-data` (referenced by step 7's IAM policy) are not
   created by any script verified this session — check
   `scripts/dynamodb_setup.py` / `scripts/setup_s3_synthetic_data.py` or create
   manually before step 7. (Note: this is separate from the
   `<team_id>-maintenance-schedules`/`<team_id>-work-orders` tables, which
-  step 3c now creates.)
+  step 5 now creates.)
 - ~~Step 1 prints but does not persist `user_pool_id`~~ **Fixed 2026-08-30:**
   `cognito_setup.py` now automatically merges `COGNITO_USER_POOL_ID` into the
   paired `.agentcore.env.<team_id>` file (targeted line-replace via the same

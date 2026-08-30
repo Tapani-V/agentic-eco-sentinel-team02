@@ -114,8 +114,8 @@ app.include_router(api.router, prefix="/api", tags=["api"])
 async def root(request: Request):
     """Serve main dashboard page with version and metadata"""
     logger.info("📊 Dashboard page requested")
-    # This venv's Starlette (1.3.1) requires the request-first signature.
-    return templates.TemplateResponse(request, "index.html", {
+    return templates.TemplateResponse("index.html", {
+        "request": request,
         "app_version": settings.APP_VERSION,
         "app_name": settings.APP_NAME,
     })

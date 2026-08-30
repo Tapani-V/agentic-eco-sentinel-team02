@@ -73,40 +73,7 @@ Virginia one (different region, different resources) — it did not carry over 1
 
 ---
 
-## 3. The actual bug (why some dashboard data looks fake)
-
-Every route in `api_gateway_handler.py` **does** call through to the real Orchestrator
-AgentCore Runtime — nothing skips the agents. But not every route asks the Orchestrator
-a question it knows how to answer for real:
-
-| Route | Backing logic |
-|---|---|
-| `/devices`, `/devices/{id}`, `/devices/{id}/summary`, `/health` | ✅ Real — calls `invoke_orchestrator_action(action=...)`, same as North Virginia |
-| `/spare-parts` | ✅ Real — calls the real `get_spare_parts` action |
-| `/fleet-summary` | ✅ Real — aggregates real `list_devices` results |
-| `/work-orders`, `/maintenance-schedule`, `/alerts` | ❌ **Fabricated** — hardcoded values derived from a simple `health_state` string match (e.g. cost=2500, hours=4), not real per-device `tool_results` |
-
-The real logic for the fabricated routes already exists — just not wired up here. It
-lives in **[src/dashboard/routes/api.py](src/dashboard/routes/api.py)**
-(`extract_work_orders`, `extract_maintenance_schedules`, `extract_spare_parts`), which
-loops over devices, calls `get_device` (full analysis) per device, and reads the real
-`tool_results` the DiagnosisAgent's MCP tool calls produced.
-
-### Why this happened
-Neither of the two "proper" alternatives were ever deployed:
-- `infra/dashboard-api.yaml` + `scripts/deploy_dashboard_api.py` (a separate Dashboard
-  API Lambda tier wrapping the real `src/dashboard` logic) — **written, never deployed**
-  (no matching CloudFormation stack or S3 code bucket exists).
-- A reproducible script that deploys `api_gateway_handler.py` correctly —
-  `scripts/deploy_lambda_api_gateway_boto3.py` only packages the old raw
-  `lambda_orchestrator_handler.py` and only wires `POST /orchestrate`; it does **not**
-  create the `{proxy+}` resource or set the FastAPI Handler. Whoever got the current
-  code live did it manually (not captured in any script) — this is the real reason the
-  setup feels ad hoc.
-
----
-
-## 4. Where the sensor/health data actually comes from
+## 3. Where the sensor/health data actually comes from
 
 - S3 bucket: `agentic-ai-poc-synthetic-data` (shared across teams), prefix `devices/`
   → `s3://agentic-ai-poc-synthetic-data/devices/{device_id}.json`
@@ -128,7 +95,7 @@ Neither of the two "proper" alternatives were ever deployed:
 
 ---
 
-## 5. Connecting a local dashboard to Frankfurt for a demo
+## 4. Connecting a local dashboard to Frankfurt for a demo
 
 Confirmed via live curl tests against `smxdpw59j6`:
 
@@ -143,46 +110,26 @@ the old `/orchestrate` suffix:
 ```
 ORCHESTRATOR_URL=https://smxdpw59j6.execute-api.eu-central-1.amazonaws.com/prod
 ```
-(`src/dashboard/config.py`'s current default still has the old `/orchestrate` suffix
-and the old us-east-1 host — stale, should be updated.)
+`src/dashboard/config.py` already uses this Frankfurt stage root as its default, so no
+environment variable is required unless a different backend is wanted.
+
+The **stage root** is the deployed API Gateway base URL through `/prod`, before any
+endpoint path. The local dashboard appends its endpoint paths to this value:
+
+```text
+https://smxdpw59j6.execute-api.eu-central-1.amazonaws.com/prod/devices
+https://smxdpw59j6.execute-api.eu-central-1.amazonaws.com/prod/health
+```
+
+Do not append `/orchestrate` to `ORCHESTRATOR_URL`. Frankfurt uses flat routes for
+dashboard data (`/devices`, `/fleet-summary`, `/alerts`, `/work-orders`, and others).
+`POST /orchestrate` remains available as a separate endpoint for generic orchestrator
+requests; it is not a prefix for the dashboard routes. North Virginia used the older
+`/orchestrate/devices` route pattern, which Frankfurt no longer supports.
 
 ---
 
-## 6. Simplification plan (not yet implemented)
-
-Goal: restore the North-Virginia-simple mental model — CloudFront/React stay
-untouched, one Lambda, real data everywhere — without adding new infrastructure.
-
-1. **New branch** off `event/hackathon-team01` (e.g. `feature/simplify-dashboard-lambda`)
-   so the current live setup is safe to fall back to.
-2. **Back up the current live Lambda code** (`aws lambda get-function` → download the
-   deployed zip) before changing anything, as a rollback point.
-3. **Leave untouched:** `scripts/deploy_cloudfront.py` / `infra/cloudfront-dashboard.yaml`
-   (CloudFront/S3/React), and the already-real routes (`/devices*`, `/health`,
-   `/spare-parts`, `/fleet-summary`, `POST /orchestrate`) and
-   `lambda_orchestrator_handler.py`'s bridge functions.
-4. **Fix the fabricated routes** (`/work-orders`, `/maintenance-schedule`, `/alerts`)
-   inside `api_gateway_handler.py` — port the real extraction logic from
-   `src/dashboard/routes/api.py`, but call it via the existing
-   `invoke_orchestrator_action()` boto3 helper instead of `OrchestratorClient`'s HTTP
-   calls (avoids the Lambda calling back out to its own API Gateway).
-5. **Standardize the URL convention** on the flat style that's already live
-   (`/devices`, `/health`, ...) and update `src/dashboard/config.py`'s default to match.
-6. **Make the deploy reproducible** — fix `scripts/deploy_lambda_api_gateway_boto3.py`
-   to package `api_gateway_handler.py` + dependencies correctly and create the
-   `{proxy+}` resource, so redeploying is one script run, not manual console work.
-7. **Test before touching production** — run locally first, then redeploy to the same
-   Lambda name (no CloudFront origin change needed) and curl-test every route against
-   the live `prod` stage.
-8. Leave `infra/dashboard-api.yaml` / `scripts/deploy_dashboard_api.py` unused — the
-   single-Lambda approach avoids needing that second tier entirely.
-
-No implementation has been done yet — this document is the agreed reference point
-before starting step 1.
-
----
-
-## 7. Clarification: is `lambda_orchestrator_handler.py` the same file from North Virginia? How many Lambda functions total?
+## 5. Is `lambda_orchestrator_handler.py` the same file from North Virginia? How many Lambda functions total?
 
 ### Is `lambda_orchestrator_handler.py` the same file from North Virginia?
 
@@ -258,8 +205,8 @@ REST API (`<team_id>-orchestrator-api`) created by the current script.
 | File | Status |
 |---|---|
 | `functions/api_gateway_handler.py` | In use — the Lambda entry point (`Handler = api_gateway_handler.handler`) |
-| `functions/lambda_orchestrator_handler.py` | In use, partially — only `invoke_orchestrator_agent`, `invoke_orchestrator_action`, and `_invoke_orchestrator_runtime` are imported and called. `lambda_handler`, `handle_get_request`, and `create_response` were dead code and were removed in the section 9 cleanup. |
-| `scripts/deploy_lambda_api_gateway_boto3.py` | Not used for this stack. Per section 3, it only wires `POST /orchestrate` and does not create the `{proxy+}` resource or set the FastAPI handler, so its output does not match the live configuration. |
+| `functions/lambda_orchestrator_handler.py` | In use, partially — only `invoke_orchestrator_agent`, `invoke_orchestrator_action`, and `_invoke_orchestrator_runtime` are imported and called. `lambda_handler`, `handle_get_request`, and `create_response` were dead code and were removed during the dashboard-data fix. |
+| `scripts/deploy_lambda_api_gateway_boto3.py` | Not used for this stack. It only wires `POST /orchestrate` and does not create the `{proxy+}` resource or set the FastAPI handler, so its output does not match the live configuration. |
 | `scripts/deploy_lambda_api_gateway_fastapi.py` | The current deploy script for this Lambda + API Gateway. Its docstring states it "mirrors the exact live team01 setup...verified via AWS CLI on 2026-08-28" — the live Lambda was originally created manually, and this script was written afterward to capture that configuration in a reproducible, team-parameterized form. |
 
 Deploy command (documented as step 7 in `TEAM_ONBOARDING_STEPS.md`):
@@ -284,9 +231,9 @@ table / `<team_id>-synthetic-data` S3 bucket to already exist (referenced by its
 IAM policy, not created by this script — still an open onboarding gap).
 
 
-## 8. Thoughts before implementation:
+## 6. Operational considerations
 
-Fixing the fabricated-data bug alone wouldn't remove most of the complexity. Here's what would still remain hard for hackathon participants even after that fix:
+The CloudFront deployment path has operational tradeoffs for hackathon participants:
 
 Deploy/iteration loop is slow and manual:
 
@@ -307,7 +254,7 @@ So my view holds: even post-fix, the CloudFront path adds real friction for anyo
 
 ---
 
-## 9. Implementation log — fabricated-data fix (branch `event/hackathon-team01-cloudfront-dashboard-fix`)
+## 7. Dashboard-data fix (branch `event/hackathon-team01-cloudfront-dashboard-fix`)
 
 Applied on top of `event/hackathon-team01`, keeping the one-Lambda/two-file split
 from section 7 (no new infrastructure).
@@ -358,14 +305,20 @@ from section 7 (no new infrastructure).
 ### Deliberately left unchanged
 
 - `scripts/deploy_lambda_api_gateway_boto3.py` still doesn't match the live
-  Handler/`{proxy+}` config (see section 3) — fixing that script is a separate,
+  Handler/`{proxy+}` config — fixing that script is a separate,
   larger task (making the deploy reproducible) and wasn't part of this fix.
 - CloudFront/S3/React app itself, `scripts/deploy_cloudfront.py`,
   `infra/cloudfront-dashboard.yaml` — untouched.
-- No AWS resources were touched — everything above is a local code change only,
-  not yet redeployed to the live `team01-orchestrator-handler` Lambda.
+### Deployment status
 
-### Not yet done (needs explicit go-ahead before touching AWS)
+**Deployed and verified live**, confirmed on 2026-08-30 via:
+- `aws lambda get-function` — `LastModified: 2026-08-28T11:26:36.000+0000`, matching
+  when this fix was completed.
+- `aws logs tail /aws/lambda/team01-orchestrator-handler` — shows real per-device
+  `get_device` analysis calls (not the old fabricated single-string-match pattern),
+  the 300s in-memory cache behaving as designed (a ~31s cold call followed by a
+  ~2ms cached repeat), and zero errors.
+- A live curl test against every route on the `prod` stage.
 
-- Re-zip and deploy the updated Lambda code to `team01-orchestrator-handler`.
-- Curl-test every route against the live `prod` stage after redeploy.
+All items in this section (code changes, removed files, redeploy, curl verification)
+are complete.

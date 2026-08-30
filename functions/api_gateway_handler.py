@@ -61,9 +61,9 @@ async def health():
 @app.get("/devices")
 @app.get("/api/devices")
 async def list_devices():
-    result = invoke_orchestrator_action(action="list_devices")
-    body = _unwrap(result)
-    return body
+    """Return cached live analyses so device cards match fleet summary health."""
+    devices = _get_analyzed_devices()
+    return {"devices": devices, "total": len(devices)}
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +232,11 @@ async def get_work_orders(status: Optional[str] = None, skip: int = 0, limit: in
 
     work_orders: List[Dict[str, Any]] = []
     for d in devices:
-        work_orders.extend(extract_work_orders(d.get("tool_results", {})))
+        for work_order in extract_work_orders(d.get("tool_results", {})):
+            work_order.setdefault("device_id", d.get("device_id", ""))
+            if not work_order["device_id"]:
+                work_order["device_id"] = d.get("device_id", "")
+            work_orders.append(work_order)
 
     if status:
         work_orders = [wo for wo in work_orders if wo.get("status") == status]
@@ -259,26 +263,46 @@ async def get_work_orders(status: Optional[str] = None, skip: int = 0, limit: in
 @app.get("/spare-parts")
 @app.get("/api/spare-parts")
 async def get_spare_parts(availability: Optional[str] = None, skip: int = 0, limit: int = 50):
-    """Return spare parts inventory from MCP tool."""
-    result = invoke_orchestrator_action(action="get_spare_parts")
-    parts_body = _unwrap(result)
-    parts = parts_body.get("parts", [])
+    """Return spare parts requested during cached per-device diagnoses."""
+    parts_by_id: Dict[str, Dict[str, Any]] = {}
+    for device in _get_analyzed_devices():
+        for part in extract_spare_parts(device.get("tool_results", {})):
+            part_id = part.get("part_id")
+            if part_id and part_id not in parts_by_id:
+                parts_by_id[part_id] = part
+
+    parts = list(parts_by_id.values())
 
     if availability:
         parts = [p for p in parts if p.get("availability") == availability]
 
     in_stock = sum(1 for p in parts if p.get("availability") == "in_stock")
     on_order = sum(1 for p in parts if p.get("availability") == "on_order")
+    out_of_stock = sum(1 for p in parts if p.get("availability") == "out_of_stock")
     critical_unavail = sum(
         1 for p in parts
         if p.get("criticality") == "critical" and p.get("availability") != "in_stock"
     )
+    availability_order = {"out_of_stock": 0, "on_order": 1, "in_stock": 2}
+    criticality_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    parts.sort(key=lambda p: (
+        criticality_order.get(p.get("criticality"), 4),
+        availability_order.get(p.get("availability"), 3),
+    ))
 
     return {
         "parts": parts[skip : skip + limit],
         "total": len(parts),
-        "by_availability": {"in_stock": in_stock, "on_order": on_order},
+        "by_availability": {
+            "in_stock": in_stock,
+            "on_order": on_order,
+            "out_of_stock": out_of_stock,
+        },
         "critical_parts_unavailable": critical_unavail,
+        "total_value_in_stock": round(sum(
+            p.get("unit_cost", 0) * p.get("quantity_available", 0)
+            for p in parts if p.get("availability") == "in_stock"
+        ), 2),
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -289,8 +313,8 @@ async def get_spare_parts(availability: Optional[str] = None, skip: int = 0, lim
 @app.get("/analytics/overview")
 @app.get("/api/analytics/overview")
 async def analytics_overview():
-    """Aggregate analytics from device health data."""
-    devices = _get_devices_list()
+    """Aggregate analytics from cached live HealthAgent analyses."""
+    devices = _get_analyzed_devices()
 
     equipment_counts: Dict[str, int] = {}
     degradation_scores = []
@@ -366,7 +390,11 @@ async def cache_clear():
 @app.get("/status")
 @app.get("/api/status")
 async def status():
-    return {"status": "ok", "service": "orchestrator"}
+    return {
+        "status": "ok",
+        "service": "orchestrator",
+        "dashboard": {"version": "3.0"},
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -94,6 +94,9 @@ class LambdaApiGatewayDeployer:
         self.sts = session.client("sts", region_name=region)
 
         self.account_id = self.sts.get_caller_identity()["Account"]
+        self.permission_boundary_arn = (
+            f"arn:aws:iam::{self.account_id}:policy/GroupIT_ProjectPermissionBoundary"
+        )
 
         self.role_name = f"{team_id}-lambda-execution-role"
         self.function_name = f"{team_id}-orchestrator-handler"
@@ -113,19 +116,19 @@ class LambdaApiGatewayDeployer:
             ],
         }
         try:
+            role_arn = self.iam.get_role(RoleName=self.role_name)["Role"]["Arn"]
+            logger.info(f"Role already exists: {role_arn}")
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "NoSuchEntity":
+                raise
             response = self.iam.create_role(
                 RoleName=self.role_name,
                 AssumeRolePolicyDocument=json.dumps(trust_policy),
+                PermissionsBoundary=self.permission_boundary_arn,
                 Description=f"Lambda execution role for {self.team_id} orchestrator API",
             )
             role_arn = response["Role"]["Arn"]
             logger.info(f"Created role {role_arn}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "EntityAlreadyExists":
-                role_arn = self.iam.get_role(RoleName=self.role_name)["Role"]["Arn"]
-                logger.info(f"Role already exists: {role_arn}")
-            else:
-                raise
 
         policies = {
             f"{self.team_id}-agentcore-invoke": {
@@ -221,10 +224,18 @@ class LambdaApiGatewayDeployer:
         temp_dir = tempfile.mkdtemp()
         try:
             requirements_file = FUNCTIONS_DIR / "requirements.txt"
-            pip_args = [sys.executable, "-m", "pip", "install", "-t", temp_dir]
+            pip_args = [
+                sys.executable, "-m", "pip", "install",
+                "--target", temp_dir,
+                "--platform", "manylinux2014_x86_64",
+                "--implementation", "cp",
+                "--python-version", "3.11",
+                "--abi", "cp311",
+                "--only-binary=:all:",
+            ]
             if requirements_file.exists():
                 pip_args += ["-r", str(requirements_file)]
-            logger.info("Installing dependencies (boto3, fastapi, mangum)...")
+            logger.info("Installing Python 3.11 x86_64 Lambda dependencies (boto3, fastapi, mangum)...")
             subprocess.run(pip_args, capture_output=True, check=True)
 
             zip_buffer = io.BytesIO()

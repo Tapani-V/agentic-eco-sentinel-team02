@@ -39,6 +39,8 @@
   --state-healthy: #4caf50;
   --state-warning: #ffc107;
   --state-critical: #f44336;
+  --state-healthy-text: #237a3b;
+  --state-warning-text: #9a6700;
 
   /* Shared geometry */
   --radius-card: 12px;

@@ -25,19 +25,20 @@ import shutil
 import tempfile
 import time
 import argparse
+import re
 from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
-_arg_parser = argparse.ArgumentParser(add_help=False)
+_arg_parser = argparse.ArgumentParser()
 _arg_parser.add_argument(
     "--env-file",
     default=".agentcore.env",
     help="Path to the env file to load (default: .agentcore.env). Use this to point at a "
          "team-specific file (e.g. .agentcore.env.team01) without touching the original."
 )
-_args, _ = _arg_parser.parse_known_args()
+_args = _arg_parser.parse_args()
 
 load_dotenv(_args.env_file)
 
@@ -231,6 +232,23 @@ def test_lambda(lambda_client, function):
     payload = resp['Payload'].read().decode()
     print(f"Response: {payload}")
 
+
+def merge_env_values(env_file, values):
+    """Update named environment variables without changing other entries."""
+    with open(env_file, 'r') as file:
+        content = file.read()
+
+    for key, value in values.items():
+        pattern = rf"^{re.escape(key)}=.*$"
+        replacement = f"{key}={value}"
+        if re.search(pattern, content, flags=re.MULTILINE):
+            content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+        else:
+            content = content.rstrip('\n') + f"\n{replacement}\n"
+
+    with open(env_file, 'w') as file:
+        file.write(content)
+
 # Main deploy logic
 def main():
     session = boto3.Session(profile_name=AWS_PROFILE) if AWS_PROFILE else boto3.Session()
@@ -245,6 +263,16 @@ def main():
         package_lambda(src, zip_path)
         deploy_lambda(lambda_client, fn, role_arn, zip_path)
         test_lambda(lambda_client, fn)
+    lambda_arns = {
+        'GET_SPARE_PARTS_LAMBDA_ARN': lambda_client.get_function(
+            FunctionName=f'{TEAM_ID}-get-spare-parts'
+        )['Configuration']['FunctionArn'],
+        'SCHEDULE_MAINTENANCE_LAMBDA_ARN': lambda_client.get_function(
+            FunctionName=f'{TEAM_ID}-schedule-maintenance'
+        )['Configuration']['FunctionArn'],
+    }
+    merge_env_values(_args.env_file, lambda_arns)
+    print(f"✓ MCP Lambda ARNs saved to {_args.env_file}")
     print("\nDeployment complete.")
 
 if __name__ == "__main__":

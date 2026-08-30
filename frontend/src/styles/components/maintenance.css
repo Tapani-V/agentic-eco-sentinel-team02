@@ -59,7 +59,15 @@
 }
 
 .summary-card--gold .summary-card__value {
-  color: var(--warning-gold);
+  color: var(--state-warning-text);
+}
+
+.summary-card--green {
+  border-left-color: var(--state-healthy);
+}
+
+.summary-card--green .summary-card__value {
+  color: var(--state-healthy-text);
 }
 
 .summary-card--cyan {
@@ -83,7 +91,7 @@
 }
 
 .summary-card--default .summary-card__value {
-  color: var(--primary-blue);
+  color: var(--text-primary);
 }
 
 .summary-card__label {

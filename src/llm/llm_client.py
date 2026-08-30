@@ -27,7 +27,7 @@ class LLMClient:
     Calls Amazon Nova Lite via the Bedrock Converse API.
     """
 
-    MODEL_ID = "amazon.nova-lite-v1:0"
+    MODEL_ID = "eu.amazon.nova-lite-v1:0"
 
     def __init__(self):
         """Initialize Bedrock client from environment/profile."""
