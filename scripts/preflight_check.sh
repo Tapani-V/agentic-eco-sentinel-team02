@@ -131,7 +131,7 @@ if [ -f "$PROJECT_DIR/.agentcore.env" ]; then
         print_warning "COGNITO_APP_CLIENT_ID not set"
     fi
 else
-    print_fail ".agentcore.env missing (copy from .agentcore.env.example)"
+    print_fail ".agentcore.env missing (copy from .agentcore.env.team01.example)"
 fi
 
 # Check docker-compose configuration

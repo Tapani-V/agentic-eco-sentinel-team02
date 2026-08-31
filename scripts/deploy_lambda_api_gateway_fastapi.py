@@ -16,7 +16,7 @@ by TEAM_ID.
 What this script creates/updates (idempotent - safe to re-run):
     1. IAM role "<team_id>-lambda-execution-role" with inline policies:
        - "<team_id>-agentcore-invoke"        (bedrock-agentcore:* to call the runtime)
-       - "<team_id>-lambda-policy"           (logs + DynamoDB conversation-memory table)
+       - "<team_id>-lambda-policy"           (logs + S3 read access)
        - "<team_id>-s3-synthetic-data-access" (S3 read on "<team_id>-synthetic-data")
     2. Lambda function "<team_id>-orchestrator-handler"
        - Handler: api_gateway_handler.handler (Mangum-wrapped FastAPI app)
@@ -35,9 +35,8 @@ Prerequisites this script does NOT create (must already exist - see other script
     - AgentCore Runtimes already deployed for this team_id
       (scripts/deploy_to_agentcore_boto3.py) -> reads their runtime ID from
       agent_endpoints.<team_id>.json.
-    - DynamoDB table "<team_id>-conversation-memory" and S3 bucket
-      "<team_id>-synthetic-data" (scripts/dynamodb_setup.py / setup_s3_synthetic_data.py)
-      - only their ARNs are referenced by the IAM policy here, not created here.
+    - S3 bucket "<team_id>-synthetic-data" (scripts/setup_s3_synthetic_data.py)
+      - only its ARN is referenced by the IAM policy here, not created here.
 
 AgentCore Memory (scripts/deploy_agentcore_memory.py) is NOT part of the current
 setup - AGENTCORE_MEMORY_ID is looked up on a best-effort basis and left blank
@@ -152,11 +151,6 @@ class LambdaApiGatewayDeployer:
                         "Effect": "Allow",
                         "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
                         "Resource": "arn:aws:logs:*:*:*",
-                    },
-                    {
-                        "Effect": "Allow",
-                        "Action": ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"],
-                        "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/{self.team_id}-conversation-memory",
                     },
                     {
                         "Effect": "Allow",

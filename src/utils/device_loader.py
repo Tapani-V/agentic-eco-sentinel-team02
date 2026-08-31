@@ -20,7 +20,7 @@ SSL Certificate Issues (Corporate Networks):
   If boto3/httpx raise [SSL: CERTIFICATE_VERIFY_FAILED] (common behind a
   corporate TLS-intercepting proxy):
   1. Set AWS_CA_BUNDLE=config/minimal_certificate_bundle.pem in .agentcore.env
-     (see .agentcore.env.example) - it's loaded automatically at app startup.
+     (see .agentcore.env.team01.example) - it's loaded automatically at app startup.
   2. In AWS AgentCore Runtime .agentcore.env won't exist, so this is skipped
      and boto3 falls back to the system cert store - no extra config needed there.
 

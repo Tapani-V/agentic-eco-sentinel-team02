@@ -5,7 +5,6 @@ Main Setup Orchestration Script for Agentic AI POC Phase 1
 Coordinates creation of all AWS resources in correct order:
 1. IAM Roles (required by other services)
 2. Cognito User Pool (for authentication)
-3. DynamoDB Table (for conversation memory)
 
 Usage:
     python scripts/main_setup.py
@@ -22,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from scripts.config import Config
 from scripts.iam_setup import setup_iam_roles
 from scripts.cognito_setup import setup_cognito
-from scripts.dynamodb_setup import setup_dynamodb
 
 
 # Setup logging
@@ -54,12 +52,6 @@ def print_summary(results: Dict) -> None:
     print(f"    Client ID: {cognito['client_id']}")
     print(f"    Test Email: {cognito['test_email']}")
     
-    print("\n✓ DynamoDB Configuration:")
-    dynamodb = results["dynamodb"]
-    print(f"    Table Name: {dynamodb['table_name']}")
-    print(f"    Table ARN: {dynamodb['table_arn']}")
-    print(f"    Billing Mode: {dynamodb['billing_mode']}")
-    
     print("\n" + "=" * 70)
     print("📝 Next Steps:")
     print("=" * 70)
@@ -68,7 +60,6 @@ def print_summary(results: Dict) -> None:
 2. ✅ .env file ready (update with your values)
 3. ✅ IAM roles created with permission boundary
 4. ✅ Cognito User Pool created
-5. ✅ DynamoDB table created
 
 Ready for Week 1 Day 3-4: Synthetic sensor data generator
 
@@ -119,20 +110,6 @@ def verify_setup(config: Config) -> bool:
             print(f"  ✗ Error: {e}")
             return False
         
-        # Check DynamoDB
-        dynamodb_client = __import__("boto3").client("dynamodb", region_name=config.region)
-        print("\nChecking DynamoDB Table...")
-        try:
-            response = dynamodb_client.describe_table(TableName=config.dynamodb_table_name)
-            status = response["Table"]["TableStatus"]
-            print(f"  ✓ {config.dynamodb_table_name} (Status: {status})")
-        except dynamodb_client.exceptions.ResourceNotFoundException:
-            print(f"  ✗ {config.dynamodb_table_name} not found")
-            return False
-        except Exception as e:
-            print(f"  ✗ Error: {e}")
-            return False
-        
         print("\n✅ All resources verified!")
         return True
     
@@ -151,8 +128,8 @@ def main():
     except FileNotFoundError as e:
         print(f"❌ {e}")
         print("\nPlease create .env file:")
-        print("  cp .env.template .env")
-        print("  # Edit .env with your values")
+        print("  cp .env.team01.example .env.<team_id>")
+        print("  # Edit it with your team's values")
         sys.exit(1)
     
     # Validate configuration
@@ -191,14 +168,6 @@ def main():
             config.cognito_client_name,
             config.cognito_test_user_email,
             config.cognito_test_user_password
-        )
-        
-        # Step 3: Create DynamoDB table
-        print_header("Step 3: Creating DynamoDB Table")
-        results["dynamodb"] = setup_dynamodb(
-            config.region,
-            config.dynamodb_table_name,
-            config.dynamodb_billing_mode
         )
         
         # Print summary

@@ -7,8 +7,10 @@ Given a device's sensor reading, the system classifies its health, and — only 
 something looks wrong — runs a deeper diagnosis that can call real tools (check spare
 parts, schedule maintenance, create a work order).
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for how it all fits together, and
-[HACKATHON_README.md](HACKATHON_README.md) if you're here for the hackathon.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how it all fits together,
+[HACKATHON_README.md](HACKATHON_README.md) if you're here for the hackathon, and
+[TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md) for the full per-team AWS deployment
+runbook (Cognito → Gateway → MCP tools → AgentCore Runtimes → dashboard).
 
 ## Repository layout
 
@@ -28,9 +30,12 @@ deployment/
   docker-compose/    Dockerfiles used by docker-compose.yml (local dev)
   agentcore-runtime/ Dockerfiles + build/push script for AWS Bedrock AgentCore Runtime
 
-tools/lambdas/                  Real AWS Lambda functions (MCP tool implementations)
-scripts/                        Deployment, IAM, Cognito, DynamoDB, S3, Gateway setup scripts
-tests/                          Integration/e2e test suite (pytest)
+functions/                       Lambda handler(s) behind the dashboard's API Gateway
+infra/                           CloudFormation template for the CloudFront + S3 dashboard stack
+frontend/                        React dashboard, built and deployed to S3/CloudFront per team
+tools/lambdas/                   Real AWS Lambda functions (MCP tool implementations)
+scripts/                         Deployment, IAM, Cognito, DynamoDB, S3, Gateway setup scripts
+tests/                           Integration/e2e test suite (pytest)
 ```
 
 ## Run locally (Docker Compose)
@@ -49,7 +54,7 @@ curl http://localhost:8000/health
 Local containers still call the **real, shared** AWS AgentCore Gateway (MCP tools),
 Cognito, and DynamoDB — there is no local/mock version of these. They authenticate using
 your host machine's AWS credentials (`~/.aws` is mounted read-only into each container)
-and `.agentcore.env` (copy from `.agentcore.env.example` if you don't have one).
+and `.agentcore.env` (copy from `.agentcore.env.team01.example` if you don't have one).
 
 To run local agents against a team-specific Frankfurt Cognito, Gateway, and MCP-tool
 deployment, select that team's env file when starting Compose:
@@ -65,18 +70,22 @@ day-to-day development, "Run locally (Docker Compose)" above (local orchestrator
 `http://localhost:8000`) is enough and doesn't require any of this.
 
 Each agent (`health-agent`, `diagnosis-agent`, `orchestrator`) is deployed as its own
-AgentCore Runtime, built from `deployment/agentcore-runtime/<agent>.Dockerfile`. Deploys
-are namespaced per team via `TEAM_ID` (set it in `.agentcore.env` first):
+AgentCore Runtime, built from `deployment/agentcore-runtime/<agent>.Dockerfile`. Every
+team is fully isolated (its own Cognito pool, MCP Gateway, and AgentCore Runtimes) via a
+team-specific env file, `.agentcore.env.<team_id>`. **First-time setup for a brand-new
+team is a separate, longer process — see [TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md)
+for the full, verified runbook.** The commands below just redeploy your team's *agents*
+after a code change, once your team's env file already exists:
 
 ```bash
-./scripts/deploy_team_agents.sh   # build + push images, then register/update all 3 runtimes
+./deployment/agentcore-runtime/build_and_push.sh --env-file .agentcore.env.<team_id>
+python3 scripts/deploy_to_agentcore_boto3.py --env-file .agentcore.env.<team_id>
 ```
 
-Or run the two underlying steps yourself:
-```bash
-./deployment/agentcore-runtime/build_and_push.sh          # build + push arm64 images to ECR, tagged :$TEAM_ID
-python3 scripts/deploy_to_agentcore_boto3.py --profile <your-profile>   # register/update runtimes
-```
+Both scripts create-if-missing/update-if-exists, so they're safe to re-run any time and
+never touch another team's runtimes. (`scripts/deploy_team_agents.sh` is a shortcut for
+the two commands above, but only reads the plain `.agentcore.env` file — pass `--env-file`
+directly to the two scripts when working from a team-specific file.)
 
 Unlike Docker Compose (separate ports per agent), every AgentCore Runtime container
 serves on **port 8080** — `BedrockAgentCoreApp` exposes `/ping` (health check) and
@@ -141,9 +150,12 @@ working, not just the two agents talking to each other.
 ### 2. AWS Bedrock AgentCore Runtime
 
 Optional — skip this if step 1's local Docker Compose orchestrator is all you need.
+Assumes your team's environment already exists (see "Run on AWS Bedrock AgentCore
+Runtime" above, or [TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md) if it doesn't yet).
 
 ```bash
-./scripts/deploy_team_agents.sh   # writes agent_endpoints.<TEAM_ID>.json
+./deployment/agentcore-runtime/build_and_push.sh --env-file .agentcore.env.<team_id>
+python3 scripts/deploy_to_agentcore_boto3.py --env-file .agentcore.env.<team_id>   # writes agent_endpoints.<team_id>.json
 
 # Invoke each deployed runtime directly to confirm the container/entrypoint works:
 python scripts/invoke_agentcore_runtime.py health_agent
@@ -158,7 +170,7 @@ any nested `invoke_agent_runtime`/MCP tool calls succeeded. Check
 **On a corporate network:** if boto3/httpx calls fail with
 `[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer
 certificate`, your proxy is intercepting TLS. Set `AWS_CA_BUNDLE=config/minimal_certificate_bundle.pem`
-in `.agentcore.env` (see `.agentcore.env.example`) — it's loaded automatically at app
+in `.agentcore.env` (see `.agentcore.env.team01.example`) — it's loaded automatically at app
 startup and falls back to the system cert store when unset (e.g. in AgentCore Runtime
 itself). Never work around this with `verify=False`.
 

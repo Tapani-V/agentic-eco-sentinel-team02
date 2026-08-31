@@ -5,12 +5,22 @@
 .agentcore.env
 
 # Team-specific env files (e.g. .env.team01, .agentcore.env.team01) - real
-# secrets, never commit. Does not match .env.example/.agentcore.env.example.
+# secrets, never commit. The *.example files are committed templates, not
+# real secrets - explicitly re-included below.
 .env.team*
 .agentcore.env.team*
+!.env.team01.example
+!.agentcore.env.team01.example
 
 # Local backups of env files (contain real secrets, never commit)
 env_backups/
+
+# Markdown docs - ignore all except the core onboarding/setup docs
+*.md
+!README.md
+!HACKATHON_README.md
+!TEAM_ONBOARDING_STEPS.md
+!ARCHITECTURE.md
 
 # Virtual environment
 venv/

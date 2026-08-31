@@ -6,10 +6,9 @@ Purpose of every script in this folder, grouped by what part of the system they 
 
 | Script | Purpose |
 |---|---|
-| `main_setup.py` | Orchestrates initial setup — calls `iam_setup.py`, `cognito_setup.py`, `dynamodb_setup.py` in order. |
+| `main_setup.py` | Orchestrates initial setup — calls `iam_setup.py`, `cognito_setup.py` in order. |
 | `iam_setup.py` | Creates the shared IAM roles (e.g. `AgentCoreExecutionRole`) used by agents/Lambdas. |
 | `cognito_setup.py` | Creates the Cognito user pool + app client used for API auth. |
-| `dynamodb_setup.py` | Creates the core DynamoDB tables (sessions, etc.). |
 | `config.py` | Shared config/env loader imported by the setup scripts above — not run directly. |
 
 ## MCP tools + Gateway (Lambdas, App Runner service, Gateway registration)
@@ -22,17 +21,19 @@ Purpose of every script in this folder, grouped by what part of the system they 
 | `deploy_mcp_lambdas.py` | Deploys/updates this team's own `<team_id>-get-spare-parts` and `<team_id>-schedule-maintenance` Lambda functions + IAM role. Accepts `--env-file` (reads `TEAM_ID`) — fully isolated per team since 2026-08-30 (was hardcoded to `team01-*`). |
 | `create_apprunner_ecr_pull_role.py` | One-time, account-wide: creates the IAM role App Runner uses to pull the `create_work_order` image from ECR. IAM roles aren't region-scoped — do not re-run per region/team, reuse the existing `apprunner-ecr-pull-role` ARN. |
 | `push_create_work_order_to_ecr.sh` | Pushes the `create_work_order` FastAPI service (`src/ecs_tasks/create_work_order/app.py`) image to ECR. Accepts `--region`/`--profile`/`--repo-name` — a private ECR image must live in the same region as the App Runner service pulling it, so this needs to be re-run per region (build the image locally first: `docker build -t create-work-order:latest src/ecs_tasks/create_work_order/`). |
-| `deploy_create_work_order_apprunner.sh` | Deploys that image as an App Runner service (this is the currently-used path — see `CREATE_WORK_ORDER_URL` in `.env.example`). Accepts `--region`/`--service-name`/`--env-file`, waits for `RUNNING`, and saves the generated `CREATE_WORK_ORDER_URL` to the selected env file. |
+| `deploy_create_work_order_apprunner.sh` | Deploys that image as an App Runner service (this is the currently-used path — see `CREATE_WORK_ORDER_URL` in `.agentcore.env.team01.example`). Accepts `--region`/`--service-name`/`--env-file`, waits for `RUNNING`, and saves the generated `CREATE_WORK_ORDER_URL` to the selected env file. |
 | `create_agentcore_gateway_starter.py` | One-time: creates the shared AgentCore Gateway that all MCP tools are registered under. |
 | `register_mcp_tools_starter.py` | Registers/updates Lambda + HTTP tools as targets on the shared Gateway. **This is the script to use** when adding a new tool. |
 | `setup_cognito_token_flow.py` | Wires up the Cognito client-credentials flow the Gateway uses for machine-to-machine auth; documents the end-to-end setup order (Gateway → Lambdas → registration). |
 
-## Dashboard backend (`/orchestrate` Lambda + API Gateway — separate from AgentCore Runtime)
+## Dashboard backend (Lambda + API Gateway + CloudFront — separate from AgentCore Runtime)
 
 | Script | Purpose |
 |---|---|
-| `deploy_lambda_api_gateway_boto3.py` | Deploys the orchestrator Lambda + API Gateway that the dashboard calls (`ORCHESTRATOR_URL` in `src/dashboard/config.py`). |
-| `add_devices_api_routes.py` | Adds the `/orchestrate/devices*` routes onto that same API Gateway. |
+| `deploy_lambda_api_gateway_fastapi.py` | **Current path.** Team-parameterized deploy of the FastAPI+Mangum Lambda (`functions/api_gateway_handler.py`) + REST API Gateway the dashboard calls. Reads `ORCHESTRATOR_RUNTIME_ID`/`AGENTCORE_MEMORY_ID` automatically from `agent_endpoints.<team_id>.json`. See [TEAM_ONBOARDING_STEPS.md](../TEAM_ONBOARDING_STEPS.md), step 10. |
+| `deploy_cloudfront.py` | Deploys the CloudFront + S3 stack (`infra/cloudfront-dashboard.yaml`) serving the React dashboard (`frontend/`), proxying `/api/*` to the API Gateway above. |
+| `deploy_lambda_api_gateway_boto3.py` | Older/legacy path (single-file `functions/lambda_orchestrator_handler.py` handler) — superseded by `deploy_lambda_api_gateway_fastapi.py` above. |
+| `add_devices_api_routes.py` | Adds `/orchestrate/devices*` routes — only relevant to the legacy `deploy_lambda_api_gateway_boto3.py` path. |
 | `test_device_endpoint.py` | Manual smoke test for the deployed device endpoints. |
 
 ## Cognito troubleshooting utilities (run manually as needed)

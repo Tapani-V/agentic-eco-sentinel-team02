@@ -8,7 +8,7 @@
 #   1. deployment/agentcore-runtime/build_and_push.sh   (build ARM64 images, push to ECR tagged :$TEAM_ID)
 #   2. scripts/deploy_to_agentcore_boto3.py             (create/update this team's AgentCore Runtimes)
 #
-# Requires TEAM_ID in .agentcore.env (see .agentcore.env.example). Safe to
+# Requires TEAM_ID in .agentcore.env (see .agentcore.env.team01.example). Safe to
 # re-run any time - both underlying scripts create-if-missing/update-if-exists,
 # so this never touches the shared runtimes or another team's.
 #

@@ -101,17 +101,6 @@ class IAMSetup:
                 {
                     "Effect": "Allow",
                     "Action": [
-                        "dynamodb:GetItem",
-                        "dynamodb:PutItem",
-                        "dynamodb:UpdateItem",
-                        "dynamodb:Query",
-                        "dynamodb:Scan"
-                    ],
-                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/team01-conversation-memory"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
                         "cognito-idp:InitiateAuth",
                         "cognito-idp:GetUser"
                     ],
@@ -154,15 +143,6 @@ class IAMSetup:
                 {
                     "Effect": "Allow",
                     "Action": [
-                        "dynamodb:GetItem",
-                        "dynamodb:Query",
-                        "dynamodb:Scan"
-                    ],
-                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/team01-conversation-memory"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
                         "s3:GetObject"
                     ],
                     "Resource": f"arn:aws:s3:::team01-*/*"
@@ -190,15 +170,6 @@ class IAMSetup:
                         "logs:PutLogEvents"
                     ],
                     "Resource": "arn:aws:logs:*:*:*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "dynamodb:GetItem",
-                        "dynamodb:Query",
-                        "dynamodb:Scan"
-                    ],
-                    "Resource": f"arn:aws:dynamodb:{self.region}:{self.account_id}:table/team01-conversation-memory"
                 },
                 {
                     "Effect": "Allow",

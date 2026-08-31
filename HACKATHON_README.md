@@ -7,7 +7,10 @@ this repo as a set of reusable building blocks and one worked reference example,
 single graph everyone must extend the same way.
 
 Read [README.md](README.md) to get it running, and [ARCHITECTURE.md](ARCHITECTURE.md) to
-understand how the pieces fit together before you start changing things.
+understand how the pieces fit together before you start changing things. If your team's
+AWS environment (Cognito, Gateway, AgentCore Runtimes, dashboard) doesn't exist yet, that's
+set up by a mentor following [TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md) — see
+"Your team's AWS resources" below.
 
 ## Set up your Python environment
 
@@ -30,7 +33,7 @@ aws sts get-caller-identity --profile <your-profile>   # sanity check
 ```
 
 Set that profile name as `AWS_PROFILE` in `.agentcore.env` (copy from
-`.agentcore.env.example` if you don't have one yet) — Docker Compose, the deploy
+`.agentcore.env.team01.example` if you don't have one yet) — Docker Compose, the deploy
 scripts, and the tests all read credentials from `AWS_PROFILE`, never hardcoded keys.
 SSO sessions expire after a few hours; re-run `aws sso login` if you start seeing
 `ExpiredToken`/`UnauthorizedAccess` errors.
@@ -66,11 +69,11 @@ To connect the dashboard to this local orchestrator, run:
 ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
 ```
 
-This still talks to the same real, shared AWS resources as everyone else (Gateway, Lambda
-tools, DynamoDB, S3, Cognito, Bedrock) — see the next section for what's shared. What it
+This still talks to your team's own AWS resources (Gateway, Lambda tools, DynamoDB, S3,
+Cognito, Bedrock) — see "Your team's AWS resources" below for what that means. What it
 doesn't do is deploy anything to AWS Bedrock AgentCore Runtime (`deployment/agentcore-runtime/`)
-— that's a separate, later step, covered in "Deploying to AgentCore Runtime" below, for when
-you want your agent hosted there instead of run locally.
+— that's a separate, later step, covered in "Redeploying your agents after a code change"
+below, for when you want your agent hosted there instead of run locally.
 
 ### Viewing logs (incl. LangGraph node execution)
 
@@ -85,76 +88,79 @@ in the `orchestrator` service's logs to see exactly which nodes ran (and which w
 skipped) for a given request. `docker-compose.yml` already sets `LOG_LEVEL=INFO`, so no
 extra configuration is needed.
 
-## Important: shared AWS resources — don't recreate, don't collide
+## Your team's AWS resources — already deployed for you
 
-The AgentCore Gateway, MCP tools (Lambda + App Runner), Cognito, and DynamoDB tables are
-**already deployed and shared by everyone** at the event — local Docker Compose runs hit
-the exact same real AWS resources as everyone else's. There's no per-team or local/mock
-copy of any of this. Practical implications:
-- **Don't** try to redeploy the Gateway, Cognito pool, or DynamoDB tables — they exist.
-- The synthetic device data S3 bucket (`agentic-ai-poc-synthetic-data`) is also shared and
-  read-only for agents — no per-team copy needed there either.
+Each team at this event is **fully isolated**: your own Cognito user pool, your own MCP
+Gateway, your own Lambda/App Runner MCP tools, your own DynamoDB tables, and your own
+AgentCore Runtimes — nothing is shared between teams. A mentor deploys all of this once
+per team (following [TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md)) and hands your
+team's branch off to you, so:
+- The connection details you need (`gateway_info.<team_id>.json`,
+  `agent_endpoints.<team_id>.json`, `api_gateway_endpoints.<team_id>.json`) are already
+  committed on your team's branch — nothing to set up to read them.
+- The two files that hold real secrets — `.env.<team_id>` and `.agentcore.env.<team_id>`
+  (Cognito client secret, AWS account/profile) — are **not** committed; get them from your
+  mentor through a secure channel and place them in the repo root yourself.
+- The synthetic device data S3 bucket (`agentic-ai-poc-synthetic-data`) is the one thing
+  that genuinely is shared/read-only across teams — no per-team copy needed there.
 
-## Deploying to AgentCore Runtime — set TEAM_ID first
+**Don't** re-run the Cognito/Gateway/DynamoDB setup steps yourself — ask a mentor if you
+think your team's infrastructure is missing or broken. `TEAM_ONBOARDING_STEPS.md` is the
+mentor-facing runbook for standing up a brand-new team from scratch, not something
+participants normally need to run themselves.
 
-Unlike the resources above, **AgentCore Runtime deployments are namespaced per team** via
-a `TEAM_ID` variable, so multiple teams can deploy/redeploy their own agents at the same
-time without overwriting each other (or the original shared runtimes):
+## Redeploying your agents after a code change
 
-1. Set `TEAM_ID=yourteam` in `.agentcore.env` (copy `.agentcore.env.example` if you don't
-   have one yet — everything else in it is the same shared config for everyone).
-2. Build, push, and register/update all 3 agents:
-   ```bash
-   export AWS_PROFILE=<your-profile>
-   ./scripts/deploy_team_agents.sh
-   ```
-   The `export` is required — `build_and_push.sh`'s `aws ecr` calls read the profile
-   from the `AWS_PROFILE` environment variable (no `--profile` flag), so without it
-   they fall back to no profile at all and fail.
-   This creates/updates runtimes named `<agent>_runtime_<TEAM_ID>` from images tagged
-   `:<TEAM_ID>` in ECR — it never touches the shared `<agent>_runtime` runtimes or
-   `:latest` images.
-3. Only changed one agent? Redeploy just that one:
-   ```bash
-   ./scripts/deploy_team_agents.sh health_agent
-   ```
-4. Check your runtimes are `READY` (deployment can take a minute after the script exits):
-   ```bash
-   aws bedrock-agentcore-control list-agent-runtimes --region us-east-1 \
-     --query "agentRuntimes[?contains(agentRuntimeId, '<TEAM_ID>')].{Name:agentRuntimeId,Status:status,Updated:lastUpdatedAt}" \
-     --output table
-   ```
-5. Smoke-test your deployment (actually invokes the agent, not just a status check):
-   ```bash
-   python3 scripts/invoke_agentcore_runtime.py orchestrator
-   ```
-6. Endpoints/runtime IDs are written to `agent_endpoints.<TEAM_ID>.json` (gitignored, not
-   the shared tracked `agent_endpoints.json`).
+Once your team's environment exists, redeploying just re-runs two scripts against your
+team's env file — this is the same thing `TEAM_ONBOARDING_STEPS.md`'s step 9 does for
+first-time setup:
 
-Both `scripts/deploy_to_agentcore_boto3.py` and `deployment/agentcore-runtime/build_and_push.sh`
-refuse to run if `TEAM_ID` isn't set — this is intentional so a forgotten `TEAM_ID` can never
-silently overwrite the shared runtime.
+```bash
+export AWS_PROFILE=<your-profile>   # matches AWS_PROFILE in your .agentcore.env.<team_id>
+./deployment/agentcore-runtime/build_and_push.sh --env-file .agentcore.env.<team_id>
+python3 scripts/deploy_to_agentcore_boto3.py --env-file .agentcore.env.<team_id>
+```
 
-### Connecting the dashboard to your Orchestrator AgentCore Runtime deployment
+Both scripts create-if-missing/update-if-exists and refuse to run without a resolvable
+`TEAM_ID` — safe to re-run any time, and this never touches another team's runtimes.
 
-1. Get your team's orchestrator runtime ID:
-   ```bash
-   python3 -c "import json; print(json.load(open('agent_endpoints.<TEAM_ID>.json'))['details']['orchestrator']['runtime_id'])"
-   ```
-2. Set it in `functions/lambda_orchestrator_handler.py` (~line 144):
-   ```python
-   orchestrator_runtime_id = '<runtime_id_from_step_1>'
-   ```
-3. Deploy your team's Lambda + API Gateway:
-   ```bash
-   export AWS_PROFILE=<your-profile>
-   python3 scripts/deploy_lambda_api_gateway_boto3.py
-   ```
-4. Point the dashboard at your team's API Gateway endpoint (printed by step 3) and run it:
-   ```bash
-   ORCHESTRATOR_URL=<your-team-api-gateway-url> python3 -m src.dashboard.app
-   ```
-   Open `http://localhost:8080`.
+Only changed one agent? Redeploy just that one:
+```bash
+./deployment/agentcore-runtime/build_and_push.sh --env-file .agentcore.env.<team_id> health_agent
+python3 scripts/deploy_to_agentcore_boto3.py --env-file .agentcore.env.<team_id> --agent health_agent
+```
+
+Check your runtimes are `READY` (deployment can take a minute after the script exits):
+```bash
+aws bedrock-agentcore-control list-agent-runtimes --region <your-team-region> \
+  --query "agentRuntimes[?contains(agentRuntimeId, '<team_id>')].{Name:agentRuntimeId,Status:status,Updated:lastUpdatedAt}" \
+  --output table
+```
+
+Then smoke-test (actually invokes the agent, not just a status check):
+```bash
+python3 scripts/invoke_agentcore_runtime.py orchestrator
+```
+
+Endpoint/runtime IDs are (re-)written to `agent_endpoints.<team_id>.json`. That file **is
+committed** to your team's branch (it holds no secrets, just IDs/URLs) — commit the
+update so your teammates see the same IDs.
+
+### Connecting the dashboard to your team's deployment
+
+Your team's dashboard (CloudFront + the FastAPI Lambda behind API Gateway) is deployed as
+part of the onboarding runbook — see [TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md),
+steps 9–10 (`deploy_to_agentcore_boto3.py` → `deploy_lambda_api_gateway_fastapi.py` →
+`deploy_cloudfront.py`). Those scripts read your team's runtime IDs and env file
+automatically — no manual editing of Lambda code is needed.
+
+To point a **locally-run** dashboard at your team's deployed AgentCore Runtime instead of
+a local Docker Compose orchestrator, set `ORCHESTRATOR_URL` to your team's API Gateway
+stage root (the `domain`+stage from `api_gateway_endpoints.<team_id>.json`, no trailing path):
+```bash
+ORCHESTRATOR_URL=https://<your-api-id>.execute-api.<region>.amazonaws.com/prod python3 -m src.dashboard.app
+```
+Open `http://localhost:8080`.
 
 ## LLM verification tier
 
@@ -258,10 +264,11 @@ registering a new tool name, and test a new Lambda/App Runner backend on its own
 | AgentCore Runtime Dockerfiles + build script | `deployment/agentcore-runtime/` |
 | Real Lambda tool implementations | `tools/lambdas/` |
 | Deployment/setup scripts (Cognito, DynamoDB, S3, Gateway, IAM) | `scripts/` (see [scripts/README.md](scripts/README.md) for what each one does) |
+| Full per-team AWS deployment runbook | [TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md) |
 | Tests | `tests/` |
 
 ## Getting help
 
-Ask your mentors before touching anything under `scripts/` that provisions shared AWS
-infrastructure (Cognito, DynamoDB, IAM, Gateway) — those are already set up for the event
-and don't need to be re-run.
+Ask your mentors before touching anything under `scripts/` that provisions your team's AWS
+infrastructure (Cognito, DynamoDB, IAM, Gateway) — that's already set up for your team and
+doesn't need to be re-run; flag it to a mentor if you think it's missing or broken.

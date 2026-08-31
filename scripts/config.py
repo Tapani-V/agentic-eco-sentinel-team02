@@ -21,7 +21,7 @@ class Config:
         else:
             raise FileNotFoundError(
                 f"Configuration file not found: {env_path}\n"
-                f"Please create .env from .env.template"
+                f"Please create .env.<team_id> from .env.team01.example"
             )
     
     @property
@@ -84,17 +84,6 @@ class Config:
             raise ValueError("COGNITO_TEST_USER_PASSWORD not set in .env")
         return password
     
-    # DynamoDB settings
-    @property
-    def dynamodb_table_name(self) -> str:
-        """DynamoDB table name."""
-        return os.getenv("DYNAMODB_TABLE_NAME", "agentic-ai-conversation-memory")
-    
-    @property
-    def dynamodb_billing_mode(self) -> str:
-        """DynamoDB billing mode."""
-        return os.getenv("DYNAMODB_BILLING_MODE", "PAY_PER_REQUEST")
-    
     # Azure OpenAI settings (optional)
     @property
     def azure_openai_api_key(self) -> str:
@@ -145,6 +134,5 @@ Configuration:
   Environment: {self.environment}
   
   Cognito Pool: {self.cognito_user_pool_name}
-  DynamoDB Table: {self.dynamodb_table_name}
   LLM Enabled: {bool(self.azure_openai_api_key)}
 """

@@ -123,9 +123,24 @@ automatically saves both Lambda ARNs to `.agentcore.env.team01`.
 
 ### 7. Deploy the create-work-order App Runner service
 
+> ⚠️ **Read before running:** `push_create_work_order_to_ecr.sh` pushes to a
+> shared ECR repo (`create-work-order`) but tags the image per team
+> (`:<team_id>`, derived from `--env-file`), so no team can accidentally
+> overwrite another team's image (same convention as
+> `deployment/agentcore-runtime/build_and_push.sh`). The ECR repo itself
+> doesn't need to be created beforehand — the script creates it automatically
+> if it doesn't exist yet. The `docker build` command is identical for every
+> team (it's just a local tag); only the push and App Runner commands differ,
+> forked below for team01 vs. any other team.
+
 ```bash
 docker build -t create-work-order:latest src/ecs_tasks/create_work_order/
+```
 
+**team01** (already deployed — exact commands originally run; team01 predates
+`--env-file` support here, so its image stays tagged `:latest`, not `:team01`):
+
+```bash
 bash scripts/push_create_work_order_to_ecr.sh \
   --region eu-central-1 \
   --profile StandardAccess-450410489798
@@ -139,9 +154,27 @@ bash scripts/deploy_create_work_order_apprunner.sh \
   StandardAccess-450410489798
 ```
 
+**Any other team** (e.g. team02 — note the added `--env-file` on the push
+command, and the `:team02` tag instead of `:latest` in the image URL):
+
+```bash
+bash scripts/push_create_work_order_to_ecr.sh \
+  --env-file .agentcore.env.team02 \
+  --region eu-central-1 \
+  --profile StandardAccess-450410489798
+
+bash scripts/deploy_create_work_order_apprunner.sh \
+  --region eu-central-1 \
+  --service-name team02-create-work-order-apprunner \
+  --env-file .agentcore.env.team02 \
+  450410489798.dkr.ecr.eu-central-1.amazonaws.com/create-work-order:team02 \
+  arn:aws:iam::450410489798:role/apprunner-ecr-pull-role \
+  StandardAccess-450410489798
+```
+
 The script waits for the service to become `RUNNING` and automatically saves its
 generated URL as `CREATE_WORK_ORDER_URL=https://<ServiceUrl>/work_order` in
-`.agentcore.env.team01`.
+the selected env file.
 
 ### 8. Register all MCP tools
 
@@ -216,13 +249,16 @@ python3 scripts/deploy_cloudfront.py
   (Lambda functions, IAM role/policy, DynamoDB tables, S3 bucket ARN) from
   `TEAM_ID`/`--team-id` instead of a literal `"team01"` string. They are
   documented as steps 5 and 6 of the Team01 Frankfurt runbook.
-- **DynamoDB table** `<team_id>-conversation-memory` and **S3 bucket**
-  `<team_id>-synthetic-data` (referenced by step 7's IAM policy) are not
-  created by any script verified this session — check
-  `scripts/dynamodb_setup.py` / `scripts/setup_s3_synthetic_data.py` or create
-  manually before step 7. (Note: this is separate from the
-  `<team_id>-maintenance-schedules`/`<team_id>-work-orders` tables, which
-  step 5 now creates.)
+- ~~DynamoDB table `<team_id>-conversation-memory`~~ **Removed 2026-08-31:**
+  this table was dead infrastructure — no agent code ever read or wrote it.
+  Its setup script (`scripts/dynamodb_setup.py`), config entries, and IAM
+  policy grants (in `iam_setup.py` and `deploy_lambda_api_gateway_fastapi.py`)
+  have all been deleted, so nothing needs to be created for it. (This was
+  always separate from the `<team_id>-maintenance-schedules`/
+  `<team_id>-work-orders` tables, which step 5 still creates.)
+- **S3 bucket** `<team_id>-synthetic-data` (referenced by step 7's IAM
+  policy) is not created by any script verified this session — check
+  `scripts/setup_s3_synthetic_data.py` or create manually before step 7.
 - ~~Step 1 prints but does not persist `user_pool_id`~~ **Fixed 2026-08-30:**
   `cognito_setup.py` now automatically merges `COGNITO_USER_POOL_ID` into the
   paired `.agentcore.env.<team_id>` file (targeted line-replace via the same
