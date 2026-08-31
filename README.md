@@ -54,13 +54,13 @@ curl http://localhost:8000/health
 Local containers still call the **real, shared** AWS AgentCore Gateway (MCP tools),
 Cognito, and DynamoDB — there is no local/mock version of these. They authenticate using
 your host machine's AWS credentials (`~/.aws` is mounted read-only into each container)
-and `.agentcore.env` (copy from `.agentcore.env.team01.example` if you don't have one).
+and `.agentcore.env` (copy from `.agentcore.env.team02.example` if you don't have one).
 
 To run local agents against a team-specific Frankfurt Cognito, Gateway, and MCP-tool
 deployment, select that team's env file when starting Compose:
 
 ```bash
-AGENT_ENV_FILE=.agentcore.env.team01 docker-compose up -d --build
+AGENT_ENV_FILE=.agentcore.env.team02 docker compose up -d --build
 ```
 
 ## Run on AWS Bedrock AgentCore Runtime
@@ -170,7 +170,7 @@ any nested `invoke_agent_runtime`/MCP tool calls succeeded. Check
 **On a corporate network:** if boto3/httpx calls fail with
 `[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer
 certificate`, your proxy is intercepting TLS. Set `AWS_CA_BUNDLE=config/minimal_certificate_bundle.pem`
-in `.agentcore.env` (see `.agentcore.env.team01.example`) — it's loaded automatically at app
+in `.agentcore.env` (see `.agentcore.env.team02.example`) — it's loaded automatically at app
 startup and falls back to the system cert store when unset (e.g. in AgentCore Runtime
 itself). Never work around this with `verify=False`.
 

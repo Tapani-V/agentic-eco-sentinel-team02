@@ -4,13 +4,15 @@
 .env.*.local
 .agentcore.env
 
-# Team-specific env files (e.g. .env.team01, .agentcore.env.team01) - real
+# Team-specific env files (e.g. .env.team02, .agentcore.env.team02) - real
 # secrets, never commit. The *.example files are committed templates, not
 # real secrets - explicitly re-included below.
 .env.team*
 .agentcore.env.team*
 !.env.team01.example
 !.agentcore.env.team01.example
+!.env.team02.example
+!.agentcore.env.team02.example
 
 # Local backups of env files (contain real secrets, never commit)
 env_backups/
