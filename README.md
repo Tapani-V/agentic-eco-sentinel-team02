@@ -46,7 +46,8 @@ In brief, authenticate with AWS SSO, start the local agents with the team enviro
 and use the local Python dashboard:
 
 ```bash
-aws sso login --profile <your-profile>
+aws configure sso  # name the local profile StandardAccess-450410489798
+aws sso login --profile StandardAccess-450410489798
 AGENT_ENV_FILE=.agentcore.env.<team_id> docker compose up -d
 ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
 ```
