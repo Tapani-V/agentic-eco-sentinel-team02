@@ -221,6 +221,21 @@ remain available as explicit overrides.
 
 ### 10. Deploy dashboard Lambda, API Gateway, and CloudFront
 
+CloudFront deployment builds the React dashboard before uploading it to S3, so the
+machine running this step must have Node.js and npm available:
+
+```bash
+node --version
+npm --version
+```
+
+If either command is missing on Ubuntu/Linux, install Node.js first:
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
 ```bash
 python3 scripts/deploy_lambda_api_gateway_fastapi.py \
   --team-id team02 \
@@ -229,15 +244,22 @@ python3 scripts/deploy_lambda_api_gateway_fastapi.py \
 ```
 
 Use the `domain` in `api_gateway_endpoints.team02.json` in the final CloudFront
-deployment command:
+deployment command. For the current team02 deployment, that value is
+`cs6nmu2qjc.execute-api.eu-central-1.amazonaws.com`:
 
 ```bash
 RESOURCE_PREFIX="team02-" \
-API_GATEWAY_DOMAIN="<domain from api_gateway_endpoints.team02.json>" \
+API_GATEWAY_DOMAIN="cs6nmu2qjc.execute-api.eu-central-1.amazonaws.com" \
 API_GATEWAY_STAGE_PATH="/prod" \
 AWS_REGION="eu-central-1" \
 AWS_PROFILE="StandardAccess-450410489798" \
 python3 scripts/deploy_cloudfront.py
+```
+
+The current team02 CloudFront dashboard URL is:
+
+```text
+https://d107b5iy48yfw5.cloudfront.net
 ```
 
 ## Known gaps / not yet automated

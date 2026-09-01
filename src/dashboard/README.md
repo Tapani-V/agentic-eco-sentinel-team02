@@ -32,9 +32,8 @@ device data in data/generated/
 ### Installation
 
 ```bash
-cd src/dashboard
-pip install -r requirements.txt
-python app.py
+pip install -r src/dashboard/requirements.txt
+ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
 ```
 
 **Dashboard available at**: http://localhost:8080
@@ -166,7 +165,7 @@ EOF
 ### Enable Debug Logging
 
 ```bash
-LOG_LEVEL=DEBUG python app.py
+LOG_LEVEL=DEBUG ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
 ```
 
 ## 🎨 Visual Design

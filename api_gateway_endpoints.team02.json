@@ -1,0 +1,10 @@
+{
+  "team_id": "team02",
+  "region": "eu-central-1",
+  "function_name": "team02-orchestrator-handler",
+  "function_arn": "arn:aws:lambda:eu-central-1:450410489798:function:team02-orchestrator-handler",
+  "api_id": "cs6nmu2qjc",
+  "domain": "cs6nmu2qjc.execute-api.eu-central-1.amazonaws.com",
+  "stage": "prod",
+  "invoke_url": "https://cs6nmu2qjc.execute-api.eu-central-1.amazonaws.com/prod"
+}

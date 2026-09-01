@@ -12,7 +12,7 @@ infrastructure first; the provisioning runbook is
 - Python 3.10+
 - Docker with the modern `docker compose` plugin
 - AWS CLI with the event SSO profile
-- Node.js/npm only if you change the React/CloudFront dashboard
+- Node.js/npm only if you change or redeploy the React/CloudFront dashboard
 
 ## AWS Login
 
@@ -61,6 +61,8 @@ HealthAgent -> DiagnosisAgent -> AgentCore Gateway -> MCP tools.
 
 ## Run Local Dashboard
 
+The Python dashboard is for local development with Docker Compose agents:
+
 ```bash
 ORCHESTRATOR_URL=http://localhost:8000 python3 -m src.dashboard.app
 ```
@@ -70,6 +72,16 @@ Open:
 ```text
 http://localhost:8080
 ```
+
+## Hosted Team Dashboard (cloud)
+
+Team02's deployed CloudFront dashboard is:
+
+```text
+https://d107b5iy48yfw5.cloudfront.net
+```
+
+Use this for the hosted AWS/AgentCore demo path.
 
 ## Hosted AgentCore Deployment
 

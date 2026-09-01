@@ -24,6 +24,7 @@ Usage:
 
 import logging
 import sys
+import inspect
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -114,11 +115,15 @@ app.include_router(api.router, prefix="/api", tags=["api"])
 async def root(request: Request):
     """Serve main dashboard page with version and metadata"""
     logger.info("📊 Dashboard page requested")
-    return templates.TemplateResponse("index.html", {
+    context = {
         "request": request,
         "app_version": settings.APP_VERSION,
         "app_name": settings.APP_NAME,
-    })
+    }
+    params = list(inspect.signature(templates.TemplateResponse).parameters)
+    if params and params[0] == "request":
+        return templates.TemplateResponse(request, "index.html", context)
+    return templates.TemplateResponse("index.html", context)
 
 
 @app.get("/health", name="health_check")

@@ -60,8 +60,8 @@ flowchart TD
    force-escalated to `URGENT_REPAIR` regardless of the rule match (business rule: a
    critical reading always means an immediate work order).
 3. **LLM fallback** — only when `confidence < 0.85` *and* the device isn't critical, the
-   rule's suggestion is sent to an LLM ([`src/llm/llm_client.py`](src/llm/llm_client.py),
-   Amazon Bedrock `amazon.nova-lite-v1:0`) to verify/override the diagnosis, action, and
+  rule's suggestion is sent to an LLM ([`src/llm/llm_client.py`](src/llm/llm_client.py),
+  Amazon Bedrock Frankfurt inference profile `eu.amazon.nova-lite-v1:0`) to verify/override the diagnosis, action, and
    confidence. High-confidence rule matches skip the LLM call entirely (cost
    optimization, same idea as the `router` node skipping DiagnosisAgent for healthy
    devices).
@@ -130,7 +130,7 @@ target (or both, if you want both to support it).
 | Transport between agents | HTTP (`httpx`) | `boto3.invoke_agent_runtime()` |
 | Dockerfile | `deployment/docker-compose/<agent>.Dockerfile` | `deployment/agentcore-runtime/<agent>.Dockerfile` |
 | Ports | 8000/8001/8002, path `/health` | 8080, paths `/invocations` + `/ping` |
-| Started via | `docker-compose up` | Deployed once via `scripts/deploy_to_agentcore_boto3.py`, then invoked by AWS |
+| Started via | `docker compose up` | Deployed once via `scripts/deploy_to_agentcore_boto3.py`, then invoked by AWS |
 
 Each `handler.py` is self-contained — it *is* the `BedrockAgentCoreApp` HTTP server,
 there's no separate wrapper script:
@@ -153,30 +153,37 @@ if __name__ == "__main__":
 ```mermaid
 graph LR
     U[Dashboard / client] --> AG[API Gateway]
-    AG --> L["Lambda\norchestrator-handler"]
+    AG --> L["Lambda\nFastAPI API handler"]
     L -- invoke_agent_runtime --> O["Orchestrator\nAgentCore Runtime"]
     O -- invoke_agent_runtime --> H["HealthAgent\nAgentCore Runtime"]
     O -. invoke_agent_runtime\nif unhealthy .-> D["DiagnosisAgent\nAgentCore Runtime"]
 ```
 
-The Orchestrator is the only agent with its own public Lambda + API Gateway in front of
-it (`functions/lambda_orchestrator_handler.py`). HealthAgent and DiagnosisAgent are never
-called directly by anything public — they're only reached as nested `invoke_agent_runtime`
-calls made from inside the Orchestrator's own LangGraph workflow.
+The Orchestrator is the only agent with a public API Gateway path. API Gateway's
+`/{proxy+}` resource routes requests to the FastAPI/Mangum handler in
+[`functions/api_gateway_handler.py`](functions/api_gateway_handler.py), which uses
+[`functions/lambda_orchestrator_handler.py`](functions/lambda_orchestrator_handler.py)
+as a bridge to invoke the Orchestrator AgentCore Runtime. HealthAgent and DiagnosisAgent
+are never called directly by a public client; they are reached as nested
+`invoke_agent_runtime` calls made from inside the Orchestrator workflow.
 
 Each AgentCore Runtime session runs in its own isolated microVM, torn down after AWS's
 default idle timeout (15 minutes) or max lifetime (8 hours) — this project doesn't
 override either value, so both are AWS's defaults.
 
-## MCP tools, Gateway, Cognito, DynamoDB — shared, unchanged
+## MCP tools, Gateway, Cognito, DynamoDB
 
-These pieces are **existing, already-deployed AWS infrastructure**, shared by every
-deployment mode (local or AgentCore) and every team. This branch does not create,
-redeploy, or reconfigure any of them:
+Each team has isolated Cognito, AgentCore Gateway, MCP tool backends, DynamoDB tables,
+AgentCore Runtimes, API Gateway/Lambda, and CloudFront dashboard resources. Team-specific
+settings are supplied through `.agentcore.env.<team_id>`. Local Docker Compose agents and
+hosted AgentCore Runtimes use the same team's AWS components.
 
-- **AgentCore Gateway** — real endpoint in `.agentcore.env` (`GATEWAY_URL`). Agents call
-  it via [`src/gateway/client.py`](src/gateway/client.py); it routes to the actual tool
-  implementations.
+The synthetic sensor-data bucket (`agentic-ai-poc-synthetic-data`) and shared execution
+roles are exceptions: they are intentionally shared across teams.
+
+- **AgentCore Gateway** — team-specific endpoint in `.agentcore.env.<team_id>`
+  (`GATEWAY_URL`). Agents call it via [`src/gateway/client.py`](src/gateway/client.py);
+  it routes to that team's tool implementations.
 - **MCP tools** (3 total), each with a JSON tool schema in `tools/schemas/`:
 
   | Tool | Implementation | Storage |
@@ -190,9 +197,9 @@ redeploy, or reconfigure any of them:
   `create-work-order` *generate* new records (a maintenance schedule / a work order) on
   every call, so they have nothing to seed; they just write straight to their own
   DynamoDB table.
-- **Cognito** — used for Gateway token auth (`client_credentials` grant). Config lives in
-  `.agentcore.env`.
-- **DynamoDB** — real tables (`maintenance_schedules`, `work_orders`), written to by the
-  tools above. There is no local/mock DynamoDB — local Docker Compose containers use
-  your host's real AWS credentials (`~/.aws` mounted read-only) to hit the same tables
-  AgentCore Runtime deployments use.
+- **Cognito** — team-specific token issuer for Gateway authentication
+  (`client_credentials` grant). Configuration lives in `.agentcore.env.<team_id>`.
+- **DynamoDB** — team-specific maintenance-schedule and work-order tables, written to by
+  the tools above. There is no local/mock DynamoDB: local Docker Compose containers use
+  your host's real AWS credentials (`~/.aws` mounted read-only) to access the same
+  team-specific tables as hosted AgentCore Runtime deployments.
