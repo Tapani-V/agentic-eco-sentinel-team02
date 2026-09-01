@@ -25,20 +25,22 @@ Output: `health_status`, `degradation_score`, `anomalies` — this is exactly wh
 
 ```mermaid
 flowchart TD
-    A["1. Pattern match\nequipment-specific rules"] --> B{"2. health_status\ncritical?"}
-    B -- yes --> C["Force action = URGENT_REPAIR"]
-    B -- no --> D{"3. confidence >= 0.85?"}
-    D -- yes --> E["Trust the rule\n(skip LLM)"]
-    D -- no --> F["Call LLM to verify/override\ndiagnosis, action, confidence"]
-    C --> G["4. Execute action"]
+    H{"Health result?"} -- healthy --> N["Skip diagnosis"]
+    H -- warning/critical --> A["Pattern match"]
+    A --> B{"Critical?"}
+    B -- yes --> C["Urgent repair"]
+    B -- no --> D{"Confidence >= 0.85?"}
+    D -- yes --> E["Use rule"]
+    D -- no --> F["LLM verifies"]
+    C --> G["Execute action"]
     E --> G
     F --> G
-    G --> H{{action}}
-    H -- URGENT_REPAIR --> I["create-work-order"]
-    H -- SCHEDULE_MAINTENANCE --> J["get-spare-parts"]
-    J -- parts available --> J1["schedule-maintenance"]
-    J -- parts NOT available --> J2["create-work-order (procurement)"]
-    H -- MONITOR_ONLY --> K["no tool calls"]
+    G --> Action["Action"]
+    Action -- URGENT_REPAIR --> I["create-work-order"]
+    Action -- SCHEDULE_MAINTENANCE --> J["get-spare-parts"]
+    J -- available --> J1["schedule-maintenance"]
+    J -- unavailable --> J2["create-work-order"]
+    Action -- MONITOR_ONLY --> K["no tool calls"]
 ```
 
 1. **Pattern match** — each equipment type has its own method
