@@ -17,10 +17,14 @@ infrastructure first; the provisioning runbook is
 ## AWS Login
 
 ```bash
-aws configure sso
-aws sso login --profile <your-profile>
-aws sts get-caller-identity --profile <your-profile> --region eu-central-1
+aws configure sso  # name the local profile StandardAccess-450410489798
+aws sso login --profile StandardAccess-450410489798
+aws sts get-caller-identity --profile StandardAccess-450410489798 --region eu-central-1
 ```
+
+For this team02 branch, use the local profile name
+`StandardAccess-450410489798`. The supplied team environment file and onboarding
+commands use that name.
 
 Your mentor provides `.agentcore.env.<team_id>`. It contains real team settings and
 secrets, so do not commit it.
@@ -106,7 +110,7 @@ python3 scripts/deploy_to_agentcore_boto3.py --env-file .agentcore.env.<team_id>
 Smoke-test a deployed runtime:
 
 ```bash
-python3 scripts/invoke_agentcore_runtime.py orchestrator --team-id <team_id> --region eu-central-1 --profile <your-profile>
+python3 scripts/invoke_agentcore_runtime.py orchestrator --team-id <team_id> --region eu-central-1 --profile StandardAccess-450410489798
 ```
 
 ## LLM Verification
@@ -159,4 +163,4 @@ routes them to that team's actual Lambda/App Runner resources.
 - Prefer local Docker Compose when you want Swagger UI during a demo.
 - Use the hosted dashboard for the deployed AWS/AgentCore end-to-end demo.
 - Python test files exist, but they are not required for the standard hackathon demo path.
-- If AWS SSO expires, run `aws sso login --profile <your-profile>` on the host.
+- If AWS SSO expires, run `aws sso login --profile StandardAccess-450410489798` on the host.

@@ -76,6 +76,8 @@ secret; never commit them.
 ### 0. Confirm the AWS account
 
 ```bash
+aws configure sso  # name the local profile StandardAccess-450410489798
+aws sso login --profile StandardAccess-450410489798
 aws sts get-caller-identity --profile StandardAccess-450410489798 --region eu-central-1
 ```
 
