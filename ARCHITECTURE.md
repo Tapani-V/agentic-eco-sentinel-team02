@@ -155,10 +155,10 @@ if __name__ == "__main__":
 ```mermaid
 graph LR
     U[Dashboard / client] --> AG[API Gateway]
-    AG --> L["Lambda\nFastAPI API handler"]
-    L -- invoke_agent_runtime --> O["Orchestrator\nAgentCore Runtime"]
-    O -- invoke_agent_runtime --> H["HealthAgent\nAgentCore Runtime"]
-    O -. invoke_agent_runtime\nif unhealthy .-> D["DiagnosisAgent\nAgentCore Runtime"]
+  AG --> L["Lambda FastAPI API handler"]
+  L -- invoke_agent_runtime --> O["Orchestrator AgentCore Runtime"]
+  O -- invoke_agent_runtime --> H["HealthAgent AgentCore Runtime"]
+  O -. unhealthy only .-> D["DiagnosisAgent AgentCore Runtime"]
 ```
 
 The Orchestrator is the only agent with a public API Gateway path. API Gateway's
