@@ -1,4 +1,4 @@
-# Agentic Eco-Sentinel
+# Agentic Eco Sentinel
 
 Multi-agent equipment health & diagnostics system built with **LangGraph**, deployable
 either locally (Docker Compose) or on **AWS Bedrock AgentCore Runtime**.
