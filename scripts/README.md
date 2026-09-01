@@ -30,7 +30,7 @@ Purpose of every script in this folder, grouped by what part of the system they 
 
 | Script | Purpose |
 |---|---|
-| `deploy_lambda_api_gateway_fastapi.py` | **Current path.** Team-parameterized deploy of the FastAPI+Mangum Lambda (`functions/api_gateway_handler.py`) + REST API Gateway the dashboard calls. Reads `ORCHESTRATOR_RUNTIME_ID`/`AGENTCORE_MEMORY_ID` automatically from `agent_endpoints.<team_id>.json`. See [TEAM_ONBOARDING_STEPS.md](../TEAM_ONBOARDING_STEPS.md), step 10. |
+| `deploy_lambda_api_gateway_fastapi.py` | **Current path.** Team-parameterized deploy of the FastAPI+Mangum Lambda (`functions/api_gateway_handler.py`) + REST API Gateway the dashboard calls. Reads `ORCHESTRATOR_RUNTIME_ID`/`AGENTCORE_MEMORY_ID` automatically from `agent_endpoints.<team_id>.json`. See [AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md](../AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md), step 10. |
 | `deploy_cloudfront.py` | Deploys the CloudFront + S3 stack (`infra/cloudfront-dashboard.yaml`) serving the React dashboard (`frontend/`), proxying `/api/*` to the API Gateway above. |
 | `deploy_lambda_api_gateway_boto3.py` | Older/legacy path (single-file `functions/lambda_orchestrator_handler.py` handler) — superseded by `deploy_lambda_api_gateway_fastapi.py` above. |
 | `add_devices_api_routes.py` | Adds `/orchestrate/devices*` routes — only relevant to the legacy `deploy_lambda_api_gateway_boto3.py` path. |

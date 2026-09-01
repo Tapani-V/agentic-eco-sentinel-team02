@@ -21,7 +21,7 @@ env_backups/
 *.md
 !README.md
 !HACKATHON_README.md
-!TEAM_ONBOARDING_STEPS.md
+!AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md
 !ARCHITECTURE.md
 
 # Virtual environment

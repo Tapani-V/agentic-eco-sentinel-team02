@@ -9,7 +9,7 @@ parts, schedule maintenance, create a work order).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how it all fits together,
 [HACKATHON_README.md](HACKATHON_README.md) if you're here for the hackathon, and
-[TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md) for the full per-team AWS deployment
+[AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md](AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md) for the full per-team AWS deployment
 runbook (Cognito → Gateway → MCP tools → AgentCore Runtimes → dashboard).
 
 ## Repository layout
@@ -73,7 +73,7 @@ Each agent (`health-agent`, `diagnosis-agent`, `orchestrator`) is deployed as it
 AgentCore Runtime, built from `deployment/agentcore-runtime/<agent>.Dockerfile`. Every
 team is fully isolated (its own Cognito pool, MCP Gateway, and AgentCore Runtimes) via a
 team-specific env file, `.agentcore.env.<team_id>`. **First-time setup for a brand-new
-team is a separate, longer process — see [TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md)
+team is a separate, longer process — see [AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md](AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md)
 for the full, verified runbook.** The commands below just redeploy your team's *agents*
 after a code change, once your team's env file already exists:
 
@@ -151,7 +151,7 @@ working, not just the two agents talking to each other.
 
 Optional — skip this if step 1's local Docker Compose orchestrator is all you need.
 Assumes your team's environment already exists (see "Run on AWS Bedrock AgentCore
-Runtime" above, or [TEAM_ONBOARDING_STEPS.md](TEAM_ONBOARDING_STEPS.md) if it doesn't yet).
+Runtime" above, or [AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md](AWS_AGENTCORE_TEAM_ONBOARDING_STEPS.md) if it doesn't yet).
 
 ```bash
 ./deployment/agentcore-runtime/build_and_push.sh --env-file .agentcore.env.<team_id>
