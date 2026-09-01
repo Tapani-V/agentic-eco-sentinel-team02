@@ -11,24 +11,15 @@ Synthetic sensor data remains shared by design.
 
 ## Assumptions
 
-- Each team is handed its **own branch** (this one is for team02). Env files are
-  still **team-specific by filename**, so the branch can safely keep the original
-  reference config separate from this team's real deployment config:
-  - `.env` / `.agentcore.env` (plain names) = the **original, non-team-specific
-    reference config** — for this machine these are symlinks to
-    `/home/skroy/agentic_ai_poc_project_env_files/`. Never edited by any
-    team-specific run; always available to re-run the original setup.
-  - `.env.<team_id>` / `.agentcore.env.<team_id>` (e.g. `.env.team02`,
-    `.agentcore.env.team02`) = **real, gitignored, team-specific files**,
-    one pair per team. Seed each from `.env.team02.example` /
-    `.agentcore.env.team02.example` and fill in that team's values.
+- Each team is handed its **own branch** (this one is for team02). Use the
+  gitignored team-specific files `.env.<team_id>` and `.agentcore.env.<team_id>`
+  (for example, `.env.team02` and `.agentcore.env.team02`). Seed them from the
+  corresponding `*.example` templates and fill in that team's values.
 - Every script below now accepts a `--env-file` flag (default: the original
   plain filename, for backward compatibility). **Always pass `--env-file
   .agentcore.env.<team_id>` (or `.env.<team_id>` for `cognito_setup.py`) when
   doing team-specific work** — omitting it silently falls back to the
   original file (see "Known gaps" for what happens if you forget).
-- AgentCore Memory is **not** part of this setup — skipped entirely (no
-  `deploy_agentcore_memory.py` step, no `AGENTCORE_MEMORY_ID`).
 - `TEAM_ID` (e.g. `team02`) namespaces AgentCore Runtimes, the Lambda, IAM
   roles, and API Gateway. Under the fully-isolated model it also indirectly
   drives a separate Cognito pool + Gateway per team (via separate env files),
