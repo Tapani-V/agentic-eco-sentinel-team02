@@ -572,6 +572,7 @@
             <button class="tab-btn" onclick="switchTab(event, 'alerts')">Alerts</button>
             <button class="tab-btn" onclick="switchTab(event, 'maintenance')">Maintenance</button>
             <button class="tab-btn" onclick="switchTab(event, 'analytics')">Analytics</button>
+            <button class="tab-btn" onclick="switchTab(event, 'sustainability')">Sustainability</button>
         </div>
 
         <!-- TAB CONTENT -->
@@ -650,6 +651,39 @@
             </div>
         </div>
 
+        <!-- Sustainability Tab -->
+        <div id="sustainability" class="tab-content">
+            <div style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 2px solid #ddd; padding-bottom: 0;">
+                <button onclick="switchSustainabilityTab(event, 'metrics')" class="sustainability-tab-btn active" style="padding: 12px 16px; background: none; border: none; cursor: pointer; color: #1a3a70; font-weight: 600; border-bottom: 3px solid #1a3a70; margin-bottom: -2px;">🌱 Sustainability Metrics</button>
+                <button onclick="switchSustainabilityTab(event, 'spare-parts')" class="sustainability-tab-btn" style="padding: 12px 16px; background: none; border: none; cursor: pointer; color: #666; font-weight: 600; border-bottom: 3px solid transparent;">🔧 Spare Parts</button>
+                <button onclick="switchSustainabilityTab(event, 'scheduling')" class="sustainability-tab-btn" style="padding: 12px 16px; background: none; border: none; cursor: pointer; color: #666; font-weight: 600; border-bottom: 3px solid transparent;">📅 Scheduling</button>
+            </div>
+            
+             <div id="sustainability-metrics" class="sustainability-section" style="display: block;">
+                <div style="background: white; border-radius: 12px; padding: 24px; text-align: center; color: var(--text-secondary);">
+                    <div class="loading"></div>
+                    <p style="margin-top: 12px;">Running carbon- and risk-aware analysis across the fleet...</p>
+                </div>
+            </div>
+
+            <div id="sustainability-spare-parts" class="sustainability-section" style="display: none;">
+                <div style="background: white; border-radius: 12px; padding: 24px; text-align: center; color: var(--text-secondary);">
+                    <div class="loading"></div>
+                    <p style="margin-top: 12px;">Loading spare parts...</p>
+                </div>
+            </div>
+
+            <div id="sustainability-scheduling" class="sustainability-section" style="display: none;">
+                <div style="background: white; border-radius: 12px; padding: 24px; text-align: center; color: var(--text-secondary);">
+                    <div class="loading"></div>
+                    <p style="margin-top: 12px;">Loading scheduling...</p>
+                </div>
+            </div>
+        </div>
+
+
+    
+    
         <!-- FOOTER -->
         <footer>
             <div>Last updated: <span id="lastUpdate">-</span></div>
@@ -1222,6 +1256,403 @@
                     },
                 },
             });
+        }
+
+        // ========== SUSTAINABILITY SUB-TAB SWITCHING ==========
+        function switchSustainabilityTab(event, tabName) {
+            event.preventDefault();
+
+            document.querySelectorAll('.sustainability-section').forEach(section => {
+                section.style.display = 'none';
+            });
+
+            document.querySelectorAll('.sustainability-tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.color = '#666';
+                btn.style.borderBottom = '3px solid transparent';
+            });
+
+            const selected = document.getElementById('sustainability-' + tabName);
+            if (selected) selected.style.display = 'block';
+
+            event.target.classList.add('active');
+            event.target.style.color = '#1a3a70';
+            event.target.style.borderBottom = '3px solid #1a3a70';
+
+            switch (tabName) {
+                case 'metrics':      loadSustainabilityData();     break;
+                case 'spare-parts':  loadSustSparePartsData();     break;
+                case 'scheduling':   loadSustSchedulingData();     break;
+            }
+        }
+
+        // ========== SUSTAINABILITY METRICS (charts live here) ==========
+        async function loadSustainabilityData() {
+            const container = document.getElementById('sustainability-metrics');
+            const data = await fetchAPI('/sustainability');
+
+            if (!data) {
+                container.innerHTML = '<div style="background:white;border-radius:12px;padding:32px;text-align:center;color:var(--text-secondary);">Sustainability data unavailable. Check that the /sustainability endpoint is registered in the dashboard API.</div>';
+                return;
+            }
+
+            const t = data.totals || {};
+            const grid = data.grid || {};
+            const devices = data.devices || [];
+            const bypassed = data.bypassed || [];
+
+            let html = '';
+
+            // ---- Grid banner: the live number that drives every decision below
+            const badgeClass = grid.is_live ? 'live-badge' : 'live-badge static';
+            const badgeText = grid.is_live ? '● LIVE' : 'ANNUAL AVG';
+
+            html += `<div class="grid-banner">
+                <div>
+                    <div style="font-size:0.8em;text-transform:uppercase;letter-spacing:1px;opacity:0.85;margin-bottom:6px;">Grid Carbon Intensity &mdash; ${grid.zone || 'FI'}</div>
+                    <div style="font-size:2em;font-weight:800;line-height:1;">${grid.g_per_kwh != null ? grid.g_per_kwh : '&mdash;'} <span style="font-size:0.45em;font-weight:600;opacity:0.9;">gCO₂/kWh</span></div>
+                </div>
+                <div style="text-align:right;">
+                    <span class="${badgeClass}">${badgeText}</span>
+                    <div style="font-size:0.8em;opacity:0.85;margin-top:8px;max-width:340px;">${grid.source || ''}</div>
+                </div>
+            </div>`;
+
+            // ---- Headline KPIs
+            html += '<div class="kpi-grid" style="margin-bottom:20px;">';
+            html += `<div class="kpi-card success"><div class="kpi-label">CO₂ Avoided</div><div class="kpi-value" style="color:#00bcd4;">${(t.co2_avoided_kg || 0).toFixed(1)}</div><div class="kpi-subtext">kg CO₂e vs. worst option</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Cost Avoided</div><div class="kpi-value" style="color:#1565c0;">€${(t.cost_avoided_eur || 0).toFixed(0)}</div><div class="kpi-subtext">Across the fleet</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Devices Optimised</div><div class="kpi-value" style="color:#0097a7;">${t.devices_optimised || 0}</div><div class="kpi-subtext">Carbon-aware decisions</div></div>`;
+            html += `<div class="kpi-card warning"><div class="kpi-label">Safety Bypassed</div><div class="kpi-value" style="color:#ffc107;">${t.devices_bypassed || 0}</div><div class="kpi-subtext">Critical &mdash; never delayed</div></div>`;
+            html += '</div>';
+
+            // ---- Charts
+            html += '<div class="overview-grid" style="margin-bottom:20px;">';
+            html += '<div class="chart-card"><div class="chart-title">Recommended Actions</div><div class="chart-container"><canvas id="sustRecChart"></canvas></div></div>';
+            html += '<div class="chart-card"><div class="chart-title">Risk Level Distribution</div><div class="chart-container"><canvas id="sustRiskChart"></canvas></div></div>';
+            html += '</div>';
+
+            // ---- CO2 by device (bar) -- only worth drawing with real savings
+            const withSavings = devices.filter(d => (d.co2_avoided_kg || 0) > 0);
+            if (withSavings.length > 0) {
+                html += '<div class="chart-card" style="margin-bottom:20px;"><div class="chart-title">CO₂ Avoided by Device</div><div class="chart-container"><canvas id="sustCo2Chart"></canvas></div></div>';
+            }
+
+            // ---- Per-device decisions
+            html += '<div class="chart-card" style="margin-bottom:20px;">';
+            html += '<div class="chart-title">Sustainability Decisions</div>';
+
+            if (devices.length === 0) {
+                html += '<div style="text-align:center;padding:32px;color:var(--text-secondary);">No devices required a scheduling decision. Healthy devices skip this agent; critical devices bypass it.</div>';
+            } else {
+                html += '<div style="display:flex;flex-direction:column;gap:12px;">';
+                devices.forEach(d => {
+                    const isDefer = d.recommendation === 'DEFER_TO_PLANNED_VISIT';
+                    const cls = isDefer ? 'high' : 'critical';
+                    const icon = isDefer ? '📆' : (d.recommendation === 'CONTINUE_MONITORING' ? '👁️' : '🔧');
+                    const label = (d.recommendation || '').replace(/_/g, ' ');
+
+                    html += `<div class="alert-item ${cls}">
+                        <div class="alert-header">
+                            <div class="alert-title">${icon} ${d.device_id} &mdash; ${label}</div>
+                            <div class="alert-badge">Risk: ${d.risk_level || 'n/a'}</div>
+                        </div>
+                        <div class="alert-description">${d.explanation || ''}</div>
+                        <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:0.85em;opacity:0.95;margin-bottom:10px;">
+                            <span>🌱 ${(d.co2_avoided_kg || 0).toFixed(1)} kg CO₂e avoided</span>
+                            <span>💰 €${(d.cost_avoided_eur || 0).toFixed(0)}</span>
+                            <span>📅 ${d.scheduled_date || 'TBD'}</span>
+                        </div>
+                        ${renderOptionsTable(d.options || [])}
+                        ${d.breakeven && d.breakeven.explanation ? `<div style="margin-top:10px;font-size:0.82em;opacity:0.9;font-style:italic;">⚖️ ${d.breakeven.explanation}</div>` : ''}
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            html += '</div>';
+
+            // ---- Bypassed devices: the guardrail, made visible.
+            if (bypassed.length > 0) {
+                const criticalBypassed = bypassed.filter(b => b.health_status === 'critical');
+                html += '<div class="chart-card">';
+                html += '<div class="chart-title">🛡️ Safety Guardrail &mdash; Devices Not Optimised</div>';
+                html += `<p style="color:var(--text-secondary);font-size:0.9em;margin-bottom:16px;">The Sustainability Agent cannot downgrade or delay an urgent repair. Critical devices bypass it entirely, before any carbon or cost scoring runs. <strong>${criticalBypassed.length}</strong> device(s) bypassed on safety grounds.</p>`;
+                html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">';
+                bypassed.forEach(b => {
+                    const isCrit = b.health_status === 'critical';
+                    html += `<div class="bypass-card" style="border-left:4px solid ${isCrit ? '#455a64' : '#00bcd4'};">
+                        <div style="font-weight:700;">${isCrit ? '🔴' : '✅'} ${b.device_id}</div>
+                        <div style="font-size:0.82em;color:var(--text-muted);margin-top:4px;">${b.reason}</div>
+                    </div>`;
+                });
+                html += '</div></div>';
+            }
+
+            container.innerHTML = html;
+            renderSustainabilityCharts(data);
+            updateLastUpdate();
+        }
+
+        // ---- Spare parts, framed by carbon rather than stock level.
+        async function loadSustSparePartsData() {
+            const container = document.getElementById('sustainability-spare-parts');
+            const partsData = await fetchAPI('/spare-parts');
+            if (!partsData) {
+                container.innerHTML = '<div style="background:white;border-radius:12px;padding:32px;text-align:center;color:var(--text-secondary);">Spare parts data unavailable.</div>';
+                return;
+            }
+
+            const parts = partsData.parts || [];
+            const byAvail = partsData.by_availability || {};
+
+            // Embodied carbon per part type (cradle-to-gate LCA proxies).
+            // Same figures the agent uses, so the two views agree.
+            const EMBODIED = { bearing: 12.0, seal: 3.5, valve: 28.0 };
+            const embodiedFor = (name) => {
+                const n = (name || '').toLowerCase();
+                if (n.includes('bearing')) return EMBODIED.bearing;
+                if (n.includes('seal')) return EMBODIED.seal;
+                if (n.includes('valve')) return EMBODIED.valve;
+                return 10.0;
+            };
+
+            const totalEmbodied = parts.reduce(
+                (sum, p) => sum + embodiedFor(p.part_name) * (p.quantity_available || 0), 0
+            );
+
+            let html = '<div style="background:white;border-radius:12px;padding:24px;box-shadow:var(--shadow-sm);">';
+            html += '<h2 style="color:var(--primary-blue);margin-bottom:8px;">🔧 Spare Parts &mdash; Carbon View</h2>';
+            html += '<p style="color:var(--text-secondary);font-size:0.9em;margin-bottom:20px;">Parts carry embodied carbon from manufacturing. A part fitted early wastes what is left of its predecessor\'s life; a part fitted too late risks secondary damage. Availability decides whether the agent can defer at all.</p>';
+
+            html += '<div class="kpi-grid" style="margin-bottom:20px;">';
+            html += `<div class="kpi-card"><div class="kpi-label">Parts Tracked</div><div class="kpi-value" style="color:#1565c0;">${partsData.total || 0}</div></div>`;
+            html += `<div class="kpi-card success"><div class="kpi-label">In Stock</div><div class="kpi-value" style="color:#00bcd4;">${byAvail.in_stock || 0}</div><div class="kpi-subtext">Deferral possible</div></div>`;
+            html += `<div class="kpi-card warning"><div class="kpi-label">Unavailable</div><div class="kpi-value" style="color:#ffc107;">${(byAvail.out_of_stock || 0) + (byAvail.on_order || 0)}</div><div class="kpi-subtext">Forces procurement</div></div>`;
+            html += `<div class="kpi-card"><div class="kpi-label">Embodied Carbon</div><div class="kpi-value" style="color:#0097a7;">${totalEmbodied.toFixed(0)}</div><div class="kpi-subtext">kg CO₂e in stock</div></div>`;
+            html += '</div>';
+
+            if (parts.length > 0) {
+                html += '<div class="chart-container" style="height:280px;"><canvas id="sustPartsChart"></canvas></div>';
+                html += '<table class="options-table" style="background:var(--bg-surface);color:var(--text-primary);margin-top:20px;">';
+                html += '<thead><tr><th>Part</th><th>Equipment</th><th>Status</th><th style="text-align:right;">Qty</th><th style="text-align:right;">kg CO₂e each</th></tr></thead><tbody>';
+                parts.forEach(p => {
+                    const emb = embodiedFor(p.part_name);
+                    const ok = p.availability === 'in_stock';
+                    html += `<tr>
+                        <td>${p.part_name || '&mdash;'}</td>
+                        <td>${p.equipment_type || '&mdash;'}</td>
+                        <td>${ok ? '✅ in stock' : '⚠️ ' + (p.availability || '').replace('_', ' ')}</td>
+                        <td style="text-align:right;">${p.quantity_available || 0}</td>
+                        <td style="text-align:right;">${emb.toFixed(1)}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+            } else {
+                html += '<div style="text-align:center;padding:32px;color:var(--text-secondary);">No spare parts records returned.</div>';
+            }
+
+            html += '<p style="margin-top:16px;font-size:0.82em;color:var(--text-muted);font-style:italic;">Embodied carbon figures are cradle-to-gate LCA proxies, not supplier EPDs. Replace with supplier data before using in reporting.</p>';
+            html += '</div>';
+
+            container.innerHTML = html;
+
+            if (parts.length > 0 && typeof Chart !== 'undefined') {
+                const canvas = document.getElementById('sustPartsChart');
+                if (charts.sustParts) charts.sustParts.destroy();
+                if (canvas) {
+                    charts.sustParts = new Chart(canvas.getContext('2d'), {
+                        type: 'bar',
+                        data: {
+                            labels: parts.map(p => p.part_name || 'unknown'),
+                            datasets: [{
+                                label: 'Embodied CO₂e in stock (kg)',
+                                data: parts.map(p => embodiedFor(p.part_name) * (p.quantity_available || 0)),
+                                backgroundColor: '#0097a7',
+                                borderRadius: 4,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { position: 'bottom' } },
+                            scales: { y: { beginAtZero: true, title: { display: true, text: 'kg CO₂e' } } }
+                        }
+                    });
+                }
+            }
+            updateLastUpdate();
+        }
+
+        // ---- Scheduling: the dates the Sustainability Agent chose, and why.
+        async function loadSustSchedulingData() {
+            const container = document.getElementById('sustainability-scheduling');
+            const data = await fetchAPI('/sustainability');
+            if (!data) {
+                container.innerHTML = '<div style="background:white;border-radius:12px;padding:32px;text-align:center;color:var(--text-secondary);">Scheduling data unavailable.</div>';
+                return;
+            }
+
+            const devices = data.devices || [];
+
+            let html = '<div style="background:white;border-radius:12px;padding:24px;box-shadow:var(--shadow-sm);">';
+            html += '<h2 style="color:var(--primary-blue);margin-bottom:8px;">📅 Carbon-Aware Scheduling</h2>';
+            html += '<p style="color:var(--text-secondary);font-size:0.9em;margin-bottom:20px;">Service dates are chosen by the Sustainability Agent, not by a fixed rule. Each date sits inside that device\'s certified remaining-life bound, so deferral never outruns the risk it was cleared for.</p>';
+
+            if (devices.length === 0) {
+                html += '<div style="text-align:center;padding:32px;color:var(--text-secondary);">No scheduling decisions yet. Devices must reach warning status before the agent runs.</div>';
+            } else {
+                const sorted = [...devices].sort((a, b) =>
+                    String(a.scheduled_date || '').localeCompare(String(b.scheduled_date || ''))
+                );
+
+                html += '<table class="options-table" style="background:var(--bg-surface);color:var(--text-primary);">';
+                html += '<thead><tr><th>Date</th><th>Device</th><th>Action</th><th>Risk</th><th style="text-align:right;">kg CO₂e saved</th></tr></thead><tbody>';
+                sorted.forEach(d => {
+                    const isDefer = d.recommendation === 'DEFER_TO_PLANNED_VISIT';
+                    html += `<tr>
+                        <td><strong>${d.scheduled_date || 'TBD'}</strong></td>
+                        <td>${d.device_id}</td>
+                        <td>${isDefer ? '📆' : '🔧'} ${(d.recommendation || '').replace(/_/g, ' ')}</td>
+                        <td>${d.risk_level || 'n/a'}</td>
+                        <td style="text-align:right;">${(d.co2_avoided_kg || 0).toFixed(1)}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+
+                html += '<div style="margin-top:20px;display:flex;flex-direction:column;gap:12px;">';
+                sorted.forEach(d => {
+                    const risk = d.risk || {};
+                    const lb = risk.ttf_lower_bound_days;
+                    const cov = risk.coverage_level;
+                    html += `<div class="alert-item high">
+                        <div class="alert-header">
+                            <div class="alert-title">${d.device_id} &mdash; ${d.scheduled_date || 'TBD'}</div>
+                            <div class="alert-badge">Risk: ${d.risk_level || 'n/a'}</div>
+                        </div>
+                        <div class="alert-description">${d.explanation || ''}</div>
+                        ${lb != null && cov != null ? `<div style="font-size:0.85em;opacity:0.9;">🛡️ At ${(cov * 100).toFixed(0)}% coverage, at least ${lb.toFixed(1)} days of remaining life certified.</div>` : ''}
+                    </div>`;
+                });
+                html += '</div>';
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+            updateLastUpdate();
+        }
+
+        // Rejected options are the explainability story: show them struck through,
+        // with the reason the agent refused them.
+        function renderOptionsTable(options) {
+            if (!options || options.length === 0) return '';
+
+            let h = '<table class="options-table">';
+            h += '<thead><tr>'
+               + '<th>Option</th>'
+               + '<th>Status</th>'
+               + '<th style="text-align:right;">kg CO₂e</th>'
+               + '<th style="text-align:right;">€</th>'
+               + '<th style="text-align:right;">km</th>'
+               + '</tr></thead><tbody>';
+
+            options.forEach((o, i) => {
+                const blocked = o.status === 'blocked';
+                const rowClass = blocked ? 'blocked' : (i === 0 ? 'chosen' : '');
+                h += `<tr class="${rowClass}">
+                    <td>${(o.option || '').replace(/_/g, ' ')}</td>
+                    <td>${blocked ? '⛔ blocked' : (i === 0 ? '✅ chosen' : 'eligible')}</td>
+                    <td style="text-align:right;">${(o.total_co2_kg || 0).toFixed(1)}</td>
+                    <td style="text-align:right;">${(o.total_cost_eur || 0).toFixed(0)}</td>
+                    <td style="text-align:right;">${(o.travel_km || 0).toFixed(0)}</td>
+                </tr>`;
+                if (blocked && o.reason) {
+                    h += `<tr><td colspan="5" style="padding:2px 10px 8px 28px;font-size:0.92em;opacity:0.75;font-style:italic;border-top:none;">↳ ${o.reason}</td></tr>`;
+                }
+            });
+            h += '</tbody></table>';
+            return h;
+        }
+
+        function renderSustainabilityCharts(data) {
+            if (typeof Chart === 'undefined') return;
+
+            const recCanvas = document.getElementById('sustRecChart');
+            const riskCanvas = document.getElementById('sustRiskChart');
+            const co2Canvas = document.getElementById('sustCo2Chart');
+
+            if (charts.sustRec) charts.sustRec.destroy();
+            if (charts.sustRisk) charts.sustRisk.destroy();
+            if (charts.sustCo2) charts.sustCo2.destroy();
+
+            const recMix = data.recommendation_mix || [];
+            if (recCanvas && recMix.length > 0) {
+                charts.sustRec = new Chart(recCanvas.getContext('2d'), {
+                    type: 'pie',
+                    data: {
+                        labels: recMix.map(r => r.label),
+                        datasets: [{
+                            data: recMix.map(r => r.value),
+                            backgroundColor: ['#00bcd4', '#0097a7', '#ffc107', '#455a64'],
+                            borderColor: '#ffffff',
+                            borderWidth: 2,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom', labels: { padding: 15, color: '#1a1a1a' } } }
+                    }
+                });
+            }
+
+            const riskMix = data.risk_mix || [];
+            if (riskCanvas && riskMix.length > 0) {
+                const riskColors = {
+                    'Low': '#00bcd4',
+                    'Moderate': '#ffc107',
+                    'Elevated': '#ff9800',
+                    'Unquantified': '#455a64'
+                };
+                charts.sustRisk = new Chart(riskCanvas.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: riskMix.map(r => r.label),
+                        datasets: [{
+                            data: riskMix.map(r => r.value),
+                            backgroundColor: riskMix.map(r => riskColors[r.label] || '#78909c'),
+                            borderColor: '#ffffff',
+                            borderWidth: 2,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom', labels: { padding: 15, color: '#1a1a1a' } } }
+                    }
+                });
+            }
+
+            const withSavings = (data.devices || []).filter(d => (d.co2_avoided_kg || 0) > 0);
+            if (co2Canvas && withSavings.length > 0) {
+                charts.sustCo2 = new Chart(co2Canvas.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: withSavings.map(d => d.device_id),
+                        datasets: [{
+                            label: 'kg CO₂e avoided',
+                            data: withSavings.map(d => d.co2_avoided_kg),
+                            backgroundColor: '#00bcd4',
+                            borderRadius: 4,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom' } },
+                        scales: { y: { beginAtZero: true, title: { display: true, text: 'kg CO₂e' } } }
+                    }
+                });
+            }
         }
 
         // ========== TAB DATA LOADING ==========

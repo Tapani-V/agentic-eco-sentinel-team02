@@ -1551,3 +1551,202 @@ async def service_status():
         },
         "timestamp": datetime.now().isoformat(),
     }
+
+# ============================================================================
+# SUSTAINABILITY - append this block to the END of src/dashboard/routes/api.py
+# ============================================================================
+
+def extract_sustainability(device_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Pull SustainabilityAgent fields out of an orchestrator device payload.
+
+    Returns None when the agent did not run for this device (healthy devices,
+    and critical devices where the agent is deliberately bypassed).
+    """
+    if not device_data:
+        return None
+    if not device_data.get('sust_recommendation'):
+        return None
+
+    return {
+        'recommendation': device_data.get('sust_recommendation'),
+        'explanation': device_data.get('sust_explanation', ''),
+        'co2_reason': device_data.get('sust_co2', ''),
+        'cost_reason': device_data.get('sust_cost', ''),
+        'risk_level': device_data.get('sust_risk_level', 'Unknown'),
+        'scheduled_date': device_data.get('sust_scheduled_date'),
+        'options': device_data.get('sust_options', []),
+        'grid': device_data.get('sust_grid') or {},
+        'breakeven': device_data.get('sust_breakeven') or {},
+    }
+
+
+def _co2_savings_from_options(options: List[Dict[str, Any]]) -> Dict[str, float]:
+    """CO2 and cost avoided versus the worst eligible alternative.
+
+    The agent already reports savings in prose. This recomputes them as numbers
+    so the dashboard can total them across the fleet.
+    """
+    eligible = [o for o in options if o.get('status') == 'eligible']
+    if len(eligible) < 2:
+        return {'co2_avoided_kg': 0.0, 'cost_avoided_eur': 0.0}
+
+    chosen = eligible[0]  # agent returns them sorted, best first
+    worst = max(eligible, key=lambda o: o.get('total_co2_kg', 0))
+    return {
+        'co2_avoided_kg': round(
+            worst.get('total_co2_kg', 0) - chosen.get('total_co2_kg', 0), 1
+        ),
+        'cost_avoided_eur': round(
+            worst.get('total_cost_eur', 0) - chosen.get('total_cost_eur', 0), 0
+        ),
+    }
+
+
+@router.get("/sustainability")
+async def sustainability_overview():
+    """
+    Sustainability Agent results across the fleet.
+
+    Returns per-device recommendations, fleet totals, and pie-chart-ready
+    breakdowns of recommendation mix and risk level.
+
+    Devices where the agent did not run (healthy, or critical/urgent where it
+    is deliberately bypassed) are counted separately rather than hidden -- the
+    bypass count is evidence the safety guardrail is working.
+    """
+    logger.info("Sustainability overview requested")
+
+    devices_list_data = await orchestrator.get("/devices")
+    if not devices_list_data:
+        raise HTTPException(status_code=503, detail="Orchestrator unavailable")
+
+    device_ids = devices_list_data.get('devices', [])
+
+    per_device = []
+    bypassed = []
+    total_co2_avoided = 0.0
+    total_cost_avoided = 0.0
+    grid_readings = []
+
+    recommendation_counts: Dict[str, int] = {}
+    risk_counts: Dict[str, int] = {}
+
+    for device_id in device_ids:
+        device_data = await orchestrator.get(f"/devices/{device_id}")
+        if not device_data:
+            continue
+
+        sust = extract_sustainability(device_data)
+
+        if sust is None:
+            bypassed.append({
+                'device_id': device_id,
+                'health_status': device_data.get('health_status', 'unknown'),
+                'action': device_data.get('action'),
+                'reason': (
+                    'Critical device - sustainability optimisation bypassed'
+                    if device_data.get('health_status') == 'critical'
+                    else 'Healthy device - no maintenance decision required'
+                ),
+            })
+            continue
+
+        savings = _co2_savings_from_options(sust['options'])
+        total_co2_avoided += savings['co2_avoided_kg']
+        total_cost_avoided += savings['cost_avoided_eur']
+
+        rec = sust['recommendation']
+        recommendation_counts[rec] = recommendation_counts.get(rec, 0) + 1
+        risk = sust['risk_level']
+        risk_counts[risk] = risk_counts.get(risk, 0) + 1
+
+        if sust['grid'].get('g_per_kwh'):
+            grid_readings.append(sust['grid'])
+
+        per_device.append({
+            'device_id': device_id,
+            'equipment_type': device_id.split('-')[0].upper(),
+            'health_status': device_data.get('health_status'),
+            'diagnosis': device_data.get('diagnosis', ''),
+            **sust,
+            **savings,
+        })
+
+    # Sort: highest carbon saving first -- the headline devices lead the table
+    per_device.sort(key=lambda d: d.get('co2_avoided_kg', 0), reverse=True)
+
+    grid = grid_readings[0] if grid_readings else {}
+
+    logger.info(
+        f"Sustainability: {len(per_device)} optimised, {len(bypassed)} bypassed, "
+        f"{total_co2_avoided:.1f} kg CO2e avoided"
+    )
+
+    return {
+        'devices': per_device,
+        'bypassed': bypassed,
+        'totals': {
+            'devices_optimised': len(per_device),
+            'devices_bypassed': len(bypassed),
+            'co2_avoided_kg': round(total_co2_avoided, 1),
+            'cost_avoided_eur': round(total_cost_avoided, 0),
+            'equivalent_van_km_avoided': round(total_co2_avoided / 0.24, 0),
+        },
+        # Pie-chart ready
+        'recommendation_mix': [
+            {'label': k.replace('_', ' ').title(), 'value': v}
+            for k, v in sorted(recommendation_counts.items())
+        ],
+        'risk_mix': [
+            {'label': k, 'value': v}
+            for k, v in sorted(risk_counts.items())
+        ],
+        'grid': {
+            'zone': grid.get('zone', 'FI'),
+            'g_per_kwh': grid.get('g_per_kwh'),
+            'is_live': grid.get('is_live', False),
+            'source': grid.get('source', ''),
+            'label': (
+                f"{grid.get('g_per_kwh')} gCO2/kWh "
+                f"({'live' if grid.get('is_live') else 'annual average'})"
+                if grid.get('g_per_kwh') else 'unavailable'
+            ),
+        },
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+@router.get("/sustainability/{device_id}")
+async def sustainability_detail(device_id: str):
+    """Full option comparison for one device, including rejected options.
+
+    The rejected options are the point: showing what the agent refused to do,
+    and why, is most of the explainability story.
+    """
+    device_data = await orchestrator.get(f"/devices/{device_id}")
+    if not device_data:
+        raise HTTPException(status_code=404, detail=f"Device {device_id} not found")
+
+    sust = extract_sustainability(device_data)
+    if sust is None:
+        return {
+            'device_id': device_id,
+            'optimised': False,
+            'reason': (
+                'Critical device - sustainability optimisation bypassed; '
+                'urgent repair proceeds unchanged'
+                if device_data.get('health_status') == 'critical'
+                else 'Device healthy - no maintenance decision required'
+            ),
+            'health_status': device_data.get('health_status'),
+            'action': device_data.get('action'),
+        }
+
+    return {
+        'device_id': device_id,
+        'optimised': True,
+        'diagnosis': device_data.get('diagnosis', ''),
+        **sust,
+        **_co2_savings_from_options(sust['options']),
+        'timestamp': datetime.now().isoformat(),
+    }

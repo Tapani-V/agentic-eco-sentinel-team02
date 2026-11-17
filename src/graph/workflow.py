@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 """
-Orchestration Workflow - LangGraph 4-node workflow (Week 2 Day 5-7)
+Orchestration Workflow - LangGraph 5-node workflow
 
 Core workflow logic (microservices pattern - core + wrapper separation):
 - Core: This file (OrchestrationWorkflow class) - LangGraph logic
@@ -8,14 +7,19 @@ Core workflow logic (microservices pattern - core + wrapper separation):
 
 Architecture Pattern:
 Follows same pattern as agents (src/agents/ + src/services/agent/):
-├── Core logic: src/graph/workflow.py (pure Python, reusable)
-└── Service wrapper: src/services/orchestrator/app.py (FastAPI, HTTP endpoints)
+- Core logic: src/graph/workflow.py (pure Python, reusable)
+- Service wrapper: src/services/orchestrator/app.py (FastAPI, HTTP endpoints)
 
-4-Node Workflow:
-1. health_agent_node: Call HealthAgent service (port 8001)
-2. router_node: Conditional routing (cost optimization)
-3. diagnosis_agent_node: Call DiagnosisAgent service (port 8002)
-4. aggregator_node: Combine results
+5-Node Workflow:
+1. health_agent_node:         Call HealthAgent service (port 8001)
+2. router_node:               Conditional routing (cost optimization)
+3. diagnosis_agent_node:      Call DiagnosisAgent service (port 8002)
+3b. sustainability_node:      Carbon- and risk-aware scheduling (in-process)
+4. aggregator_node:           Combine results
+
+The Sustainability Agent runs in-process rather than as an HTTP service: it
+holds a calibrated conformal gate that is expensive to rebuild per request, and
+it makes no external calls of its own beyond the grid intensity lookup.
 """
 
 import logging
@@ -23,6 +27,11 @@ import httpx
 from typing import Dict, Any, List, Optional
 from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
+
+from src.agents.sustainability_agent import SustainabilityAgent
+from src.sustainability.conformal import ConformalDeferralGate
+from src.sustainability.asset_register import build_sustainability_input
+from demo.demo_region_flip import build_calibration_set
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +41,12 @@ class WorkflowState(TypedDict):
     device_id: str
     equipment_type: str
     current_reading: Dict[str, Any]
-    
+
     # From HealthAgent (Step 1)
     health_status: str
     degradation_score: float
     anomalies: List[str]
-    
+
     # From DiagnosisAgent (Step 3, optional)
     diagnosis: str
     confidence: float
@@ -47,33 +56,46 @@ class WorkflowState(TypedDict):
     action_taken: str
     tool_results: Dict[str, Any]
     llm_used: bool
-    
+
     # Recommendation fields from DiagnosisAgent (for dashboard display)
     insights: str
     immediate_actions: List[str]
     predicted_failure_date: Optional[str]
     recommendation_details: str
-    
+
+    # From SustainabilityAgent (Step 3b, optional)
+    sust_recommendation: Optional[str]
+    sust_explanation: Optional[str]
+    sust_co2: Optional[str]
+    sust_cost: Optional[str]
+    sust_risk_level: Optional[str]
+    sust_scheduled_date: Optional[str]
+    sust_options: List[Dict[str, Any]]
+    sust_grid: Optional[Dict[str, Any]]
+    sust_breakeven: Optional[Dict[str, Any]]
+    sust_applied: bool
+
     # Routing
     route: str  # "end" or "diagnose"
-    
+
     # Metadata
     start_time: float
-    
+
     # Agent Tracking (Phase 2.8 - Agent Usage Visibility)
-    agents_used: List[str]  # Which agents were called (e.g., ['health_agent', 'diagnosis_agent'])
-    mcp_tools_used: List[str]  # Which MCP tools were invoked (e.g., ['get-spare-parts', 'schedule-maintenance'])
+    agents_used: List[str]      # e.g. ['HealthAgent', 'DiagnosisAgent']
+    mcp_tools_used: List[str]   # e.g. ['get-spare-parts', 'schedule-maintenance']
 
 
 class OrchestrationWorkflow:
     """
     LangGraph-based orchestration workflow
-    
-    Week 2 Day 5-7 Implementation:
-    - 4 nodes with HTTP-based service calls (microservices architecture)
+
+    Implementation notes:
+    - 5 nodes; Health and Diagnosis over HTTP (microservices), Sustainability
+      in-process (holds a calibrated risk gate).
     - Async processing for production performance
     - Cost optimization through conditional routing
-    
+
     Usage:
         workflow = OrchestrationWorkflow(
             health_agent_url="http://localhost:8001",
@@ -81,35 +103,51 @@ class OrchestrationWorkflow:
         )
         result = await workflow.run(initial_state)
     """
-    
+
     def __init__(self, health_agent_url: str, diagnosis_agent_url: str):
         """Initialize workflow with service URLs.
-        
+
         Args:
-            health_agent_url: Base URL of HealthAgent service (e.g., http://localhost:8001)
-            diagnosis_agent_url: Base URL of DiagnosisAgent service (e.g., http://localhost:8002)
+            health_agent_url: Base URL of HealthAgent service (e.g. http://localhost:8001)
+            diagnosis_agent_url: Base URL of DiagnosisAgent service (e.g. http://localhost:8002)
         """
         self.health_agent_url = health_agent_url
         self.diagnosis_agent_url = diagnosis_agent_url
+
+        # Sustainability agent: calibrate the conformal deferral gate ONCE at
+        # startup. Refitting per request would be wasteful and would make the
+        # bound depend on request timing.
+        try:
+            _gate = ConformalDeferralGate(alpha=0.10, safety_margin_days=1.0).fit(
+                build_calibration_set(400)
+            )
+            self.sustainability_agent = SustainabilityAgent(deferral_gate=_gate)
+            logger.info("[Workflow] SustainabilityAgent ready (conformal gate calibrated)")
+        except Exception as e:
+            # Never let sustainability setup break the baseline pipeline.
+            logger.error(f"[Workflow] SustainabilityAgent init failed: {e}", exc_info=True)
+            self.sustainability_agent = None
+
         self.graph = self._build_graph()
-    
+
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow."""
         workflow = StateGraph(WorkflowState)
-        
+
         # Add nodes
         workflow.add_node("health_agent", self._health_agent_node)
         workflow.add_node("router", self._router_node)
         workflow.add_node("diagnosis_agent", self._diagnosis_agent_node)
+        workflow.add_node("sustainability", self._sustainability_node)
         workflow.add_node("aggregator", self._aggregator_node)
-        
+
         # Add edges
         workflow.add_edge("health_agent", "router")
-        
+
         # Conditional routing: router decides next step
         def route_condition(state: WorkflowState) -> str:
             return state['route']
-        
+
         workflow.add_conditional_edges(
             "router",
             route_condition,
@@ -118,21 +156,23 @@ class OrchestrationWorkflow:
                 'diagnose': 'diagnosis_agent'  # Call DiagnosisAgent (needs investigation)
             }
         )
-        
-        # After diagnosis, always go to aggregator
-        workflow.add_edge("diagnosis_agent", "aggregator")
-        
+
+        # After diagnosis, optimise scheduling, then aggregate.
+        # Healthy devices bypass both diagnosis and sustainability entirely.
+        workflow.add_edge("diagnosis_agent", "sustainability")
+        workflow.add_edge("sustainability", "aggregator")
+
         # Aggregator is final node
         workflow.add_edge("aggregator", END)
-        
+
         # Set entry point
         workflow.set_entry_point("health_agent")
-        
+
         return workflow.compile()
-    
+
     async def _health_agent_node(self, state: WorkflowState) -> WorkflowState:
         """Node 1: Call HealthAgent service
-        
+
         Pure health classification:
         - Input: sensor data
         - Output: health_status (healthy/warning/critical)
@@ -140,10 +180,10 @@ class OrchestrationWorkflow:
         """
         try:
             logger.info(f"[NODE 1] HealthAgent: Analyzing {state['device_id']}")
-            
+
             # Track that HealthAgent was used
             state['agents_used'].append('HealthAgent')
-            
+
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     f"{self.health_agent_url}/analyze",
@@ -154,34 +194,37 @@ class OrchestrationWorkflow:
                     }
                 )
                 response.raise_for_status()
-                
+
                 result = response.json()
-                
+
                 state['health_status'] = result['health_status']
                 state['degradation_score'] = result['degradation_score']
                 state['anomalies'] = result.get('anomalies', [])
-                
-                logger.info(f"  → Health: {state['health_status']}, Score: {state['degradation_score']:.2f}")
+
+                logger.info(
+                    f"  -> Health: {state['health_status']}, "
+                    f"Score: {state['degradation_score']:.2f}"
+                )
                 return state
-            
+
         except Exception as e:
             logger.error(f"HealthAgent call failed: {e}", exc_info=True)
             raise
-    
+
     async def _router_node(self, state: WorkflowState) -> WorkflowState:
         """Node 2: Router - Conditional routing
-        
+
         COST OPTIMIZATION: If device is healthy, skip DiagnosisAgent
         - Saves time (no LLM calls, no tool calls)
         - Saves cost (no DiagnosisAgent processing)
         - Route to END (aggregator)
-        
+
         If not healthy, route to DiagnosisAgent for investigation
         """
         logger.info(f"[NODE 2] Router: Routing {state['device_id']}")
-        
+
         if state['health_status'] == 'healthy':
-            logger.info(f"  → Device HEALTHY: SKIP DiagnosisAgent (cost optimization)")
+            logger.info("  -> Device HEALTHY: SKIP DiagnosisAgent (cost optimization)")
             state['route'] = 'end'
             state['diagnosis'] = 'Device operating normally'
             state['confidence'] = 1.0
@@ -192,26 +235,26 @@ class OrchestrationWorkflow:
             state['llm_used'] = False
             state['tool_results'] = {}
         else:
-            logger.info(f"  → Device {state['health_status'].upper()}: CALL DiagnosisAgent")
+            logger.info(f"  -> Device {state['health_status'].upper()}: CALL DiagnosisAgent")
             state['route'] = 'diagnose'
-        
+
         return state
-    
+
     async def _diagnosis_agent_node(self, state: WorkflowState) -> WorkflowState:
         """Node 3: Call DiagnosisAgent service (conditional, only if not healthy)
-        
+
         4-step process:
         1. Pattern matching (equipment-specific rules)
-        2. Confidence check (≥0.85 = trust, <0.85 = LLM)
+        2. Confidence check (>=0.85 = trust, <0.85 = LLM)
         3. Optional LLM enhancement
         4. Execute action (MCP tools if needed)
         """
         try:
             logger.info(f"[NODE 3] DiagnosisAgent: Diagnosing {state['device_id']}")
-            
+
             # Track that DiagnosisAgent was used
             state['agents_used'].append('DiagnosisAgent')
-            
+
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     f"{self.diagnosis_agent_url}/diagnose",
@@ -225,9 +268,9 @@ class OrchestrationWorkflow:
                     }
                 )
                 response.raise_for_status()
-                
+
                 result = response.json()
-                
+
                 state['diagnosis'] = result['diagnosis']
                 state['confidence'] = result['confidence']
                 state['confidence_rule_based'] = result.get('confidence_rule_based')
@@ -236,42 +279,119 @@ class OrchestrationWorkflow:
                 state['action_taken'] = result['action_taken']
                 state['tool_results'] = result.get('tool_results', {})
                 state['llm_used'] = result.get('llm_used', False)
-                
+
                 # Extract recommendation fields for dashboard
                 state['insights'] = result.get('insights', '')
                 state['immediate_actions'] = result.get('immediate_actions', [])
                 state['predicted_failure_date'] = result.get('predicted_failure_date')
                 state['recommendation_details'] = result.get('recommendation_details', '')
-                
+
                 # Track MCP tools that were used (extracted from tool_results)
                 tools_used = result.get('tool_results', {})
                 for tool_name in tools_used.keys():
                     # Filter out error entries and other non-tool entries
                     if tool_name not in ['error'] and not tool_name.startswith('_'):
                         state['mcp_tools_used'].append(tool_name)
-                
-                logger.info(f"  → Action: {state['action']}, Confidence: {state['confidence']:.2f}")
+
+                logger.info(
+                    f"  -> Action: {state['action']}, Confidence: {state['confidence']:.2f}"
+                )
                 return state
-            
+
         except Exception as e:
             logger.error(f"DiagnosisAgent call failed: {e}", exc_info=True)
             raise
-    
+
+    async def _sustainability_node(self, state: WorkflowState) -> WorkflowState:
+        """Node 3b: SustainabilityAgent - carbon- and risk-aware scheduling.
+
+        Decides WHEN and HOW to act, given the root cause Diagnosis identified.
+        Uses live grid carbon intensity, a continuous energy-waste model, and a
+        conformal lower bound on remaining useful life.
+
+        Three guarantees enforced here:
+          1. Critical devices are skipped entirely -- URGENT_REPAIR is never
+             downgraded, re-timed, or reconsidered.
+          2. Only SCHEDULE_MAINTENANCE and MONITOR_ONLY are optimisable.
+          3. Any failure is soft: the diagnosis result passes through unchanged
+             so the baseline pipeline can never be broken by this node.
+        """
+        state['sust_applied'] = False
+
+        try:
+            if self.sustainability_agent is None:
+                logger.warning("  -> Sustainability SKIPPED (agent unavailable)")
+                return state
+
+            # GUARDRAIL: never touch critical devices or urgent repairs.
+            if state.get('health_status') == 'critical':
+                logger.info("  -> Sustainability SKIPPED (health_status=critical)")
+                return state
+
+            if state.get('action') not in ('SCHEDULE_MAINTENANCE', 'MONITOR_ONLY'):
+                logger.info(
+                    f"  -> Sustainability SKIPPED (action={state.get('action')} "
+                    f"is outside this agent's remit)"
+                )
+                return state
+
+            logger.info(f"[NODE 3b] SustainabilityAgent: Optimising {state['device_id']}")
+            state['agents_used'].append('SustainabilityAgent')
+
+            # state already carries both HealthAgent and DiagnosisAgent output
+            payload = build_sustainability_input(
+                device_id=state['device_id'],
+                health_output=state,
+                diagnosis_output=state,
+                predicted_ttf_days=25.0,   # replace with PredictionAgent output
+            )
+
+            result = await self.sustainability_agent.execute(payload)
+
+            state['sust_recommendation'] = result.get('recommendation')
+            state['sust_explanation'] = result.get('explanation')
+            state['sust_co2'] = result.get('sustainability_reason')
+            state['sust_cost'] = result.get('business_reason')
+            state['sust_risk_level'] = result.get('risk_level')
+            state['sust_scheduled_date'] = result.get('scheduled_date')
+            state['sust_options'] = result.get('options_considered', [])
+            state['sust_grid'] = result.get('grid_intensity')
+            state['sust_breakeven'] = result.get('carbon_breakeven')
+            state['sust_applied'] = result.get('status') == 'completed'
+
+            # The agent emits a tool plan; the Orchestrator owns execution so
+            # agents never touch maintenance systems directly.
+            plan = result.get('tool_plan') or {}
+            if plan.get('tool'):
+                state['mcp_tools_used'].append(f"{plan['tool']} (sustainability-scheduled)")
+
+            logger.info(
+                f"  -> {state.get('sust_recommendation')} on "
+                f"{state.get('sust_scheduled_date')} | risk={state.get('sust_risk_level')}"
+            )
+            return state
+
+        except Exception as e:
+            # Fail soft. A carbon optimisation is never worth breaking the
+            # maintenance pipeline for.
+            logger.error(f"SustainabilityAgent failed: {e}", exc_info=True)
+            return state
+
     async def _aggregator_node(self, state: WorkflowState) -> WorkflowState:
         """Node 4: Aggregator - Combine results
-        
+
         Final processing before returning to client
         """
         logger.info(f"[NODE 4] Aggregator: Finalizing report for {state['device_id']}")
         # State is already prepared by previous nodes
         return state
-    
+
     async def run(self, initial_state: WorkflowState) -> Dict[str, Any]:
         """Run the workflow asynchronously.
-        
+
         Args:
             initial_state: Initial workflow state
-            
+
         Returns:
             Final workflow state with results
         """
